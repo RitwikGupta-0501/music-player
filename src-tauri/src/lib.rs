@@ -1,13 +1,13 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use rodio::{Decoder, OutputStream, Sink};
+use rusqlite::{Connection, Result as SqlResult};
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread;
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, State};
 
-// 1. Define the Message Payload
+// 1. Message Payload
 pub enum AudioCommand {
     Load(String),
     Play,
@@ -15,87 +15,126 @@ pub enum AudioCommand {
     Stop,
 }
 
-// 2. Define the State structure for Tauri to manage
-struct AudioState {
+// 2. Global State
+struct AppState {
     tx: Mutex<Sender<AudioCommand>>,
+    db_conn: Mutex<Connection>,
 }
 
-// 3. The Background Audio Thread
-fn start_audio_thread(rx: Receiver<AudioCommand>) {
+// 3. Database Initialization
+fn init_db() -> SqlResult<Connection> {
+    // Creates a local file for now.
+    let conn = Connection::open("echo_library.db")?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tracks (
+            id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            file_path TEXT UNIQUE NOT NULL
+        )",
+        [],
+    )?;
+    Ok(conn)
+}
+
+// 4. The Audio Thread (Now with Event Emission)
+fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) {
     thread::spawn(move || {
-        // Initialize the audio context. This must live inside the thread.
         let (_stream, stream_handle) =
-            OutputStream::try_default().expect("Failed to get audio output device");
+            OutputStream::try_default().expect("Failed to get audio output");
         let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink");
 
-        // The Receiver Loop
         loop {
-            // Block and wait for a command from the UI
             if let Ok(cmd) = rx.recv() {
                 match cmd {
                     AudioCommand::Load(path) => {
-                        sink.stop(); // Clear the current buffer
-
+                        sink.stop();
                         if let Ok(file) = File::open(&path) {
                             let reader = BufReader::new(file);
                             if let Ok(decoder) = Decoder::new(reader) {
                                 sink.append(decoder);
-                                sink.play(); // Auto-play on load
-                            } else {
-                                eprintln!("Failed to decode file: {}", path);
+                                sink.play();
+                                // Emit state back to Svelte
+                                let _ = app_handle.emit("player-state", "Playing");
+                                let _ = app_handle.emit("current-track", path.clone());
                             }
-                        } else {
-                            eprintln!("Failed to open file: {}", path);
                         }
                     }
-                    AudioCommand::Play => sink.play(),
-                    AudioCommand::Pause => sink.pause(),
-                    AudioCommand::Stop => sink.stop(),
+                    AudioCommand::Play => {
+                        sink.play();
+                        let _ = app_handle.emit("player-state", "Playing");
+                    }
+                    AudioCommand::Pause => {
+                        sink.pause();
+                        let _ = app_handle.emit("player-state", "Paused");
+                    }
+                    AudioCommand::Stop => {
+                        sink.stop();
+                        let _ = app_handle.emit("player-state", "Stopped");
+                    }
                 }
             }
         }
     });
 }
 
-// 4. Tauri Commands (The API for the Frontend)
+// 5. Async Tauri Commands
 #[tauri::command]
-fn load_audio(state: State<'_, AudioState>, path: String) {
+async fn load_audio(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    // Cache the track in SQLite when loaded
+    if let Ok(conn) = state.db_conn.lock() {
+        let _ = conn.execute(
+            "INSERT OR IGNORE INTO tracks (title, file_path) VALUES (?1, ?2)",
+            ("Unknown Title", &path),
+        );
+    }
+
     if let Ok(tx) = state.tx.lock() {
         let _ = tx.send(AudioCommand::Load(path));
     }
+    Ok(())
 }
 
 #[tauri::command]
-fn play_audio(state: State<'_, AudioState>) {
+async fn play_audio(state: State<'_, AppState>) -> Result<(), String> {
     if let Ok(tx) = state.tx.lock() {
         let _ = tx.send(AudioCommand::Play);
     }
+    Ok(())
 }
 
 #[tauri::command]
-fn pause_audio(state: State<'_, AudioState>) {
+async fn pause_audio(state: State<'_, AppState>) -> Result<(), String> {
     if let Ok(tx) = state.tx.lock() {
         let _ = tx.send(AudioCommand::Pause);
     }
+    Ok(())
 }
 
 #[tauri::command]
-fn stop_audio(state: State<'_, AudioState>) {
+async fn stop_audio(state: State<'_, AppState>) -> Result<(), String> {
     if let Ok(tx) = state.tx.lock() {
         let _ = tx.send(AudioCommand::Stop);
     }
+    Ok(())
 }
 
+// 6. App Initialization
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Create the channel
     let (tx, rx) = mpsc::channel();
-
-    // Spawn the audio daemon
-    start_audio_thread(rx);
+    let db = init_db().expect("Failed to initialize SQLite");
 
     tauri::Builder::default()
-        .manage(AudioState { tx: Mutex::new(tx) }) // Inject the Sender into Tauri state
+        .setup(|app| {
+            // Pass a clone of the AppHandle into the audio thread
+            let handle = app.handle().clone();
+            start_audio_thread(rx, handle);
+            Ok(())
+        })
+        .manage(AppState {
+            tx: Mutex::new(tx),
+            db_conn: Mutex::new(db),
+        })
         .invoke_handler(tauri::generate_handler![
             load_audio,
             play_audio,
