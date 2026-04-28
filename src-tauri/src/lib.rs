@@ -5,7 +5,9 @@ use std::io::BufReader;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
+mod providers;
+use providers::{ProviderManager, TrackResult};
 
 // 1. Message Payload
 pub enum AudioCommand {
@@ -77,6 +79,21 @@ fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) {
     });
 }
 
+#[tauri::command]
+async fn search_provider(query: String) -> Result<Vec<TrackResult>, String> {
+    // In a production app, we would load the manager once into Tauri state,
+    // but for testing the bridge, we spin it up on demand.
+    let manager = ProviderManager::new().map_err(|e| e.to_string())?;
+
+    // We point this to our local test script
+    let results = manager
+        .search("../providers/dummy_search.lua", &query)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(results)
+}
+
 // 5. Async Tauri Commands
 #[tauri::command]
 async fn load_audio(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -139,7 +156,8 @@ pub fn run() {
             load_audio,
             play_audio,
             pause_audio,
-            stop_audio
+            stop_audio,
+            search_provider
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

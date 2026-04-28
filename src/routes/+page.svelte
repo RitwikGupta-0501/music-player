@@ -3,33 +3,51 @@
     import { listen } from "@tauri-apps/api/event";
     import { onMount, onDestroy } from "svelte";
 
-    let audioPath = $state("/home/user/Music/test_track.mp3");
+    // --- AUDIO DAEMON STATE ---
     let playbackState = $state("Stopped");
     let currentTrack = $state("None");
-
     let unlistenState: () => void;
     let unlistenTrack: () => void;
 
-    // Set up event listeners when the component loads
     onMount(async () => {
-        unlistenState = await listen<string>("player-state", (event) => {
-            playbackState = event.payload;
-        });
-
-        unlistenTrack = await listen<string>("current-track", (event) => {
-            currentTrack = event.payload;
-        });
+        unlistenState = await listen<string>(
+            "player-state",
+            (e) => (playbackState = e.payload),
+        );
+        unlistenTrack = await listen<string>(
+            "current-track",
+            (e) => (currentTrack = e.payload),
+        );
     });
 
-    // Clean up listeners if the component is destroyed
     onDestroy(() => {
         if (unlistenState) unlistenState();
         if (unlistenTrack) unlistenTrack();
     });
 
-    async function loadAndPlay() {
-        await invoke("load_audio", { path: audioPath });
+    // --- LUA PROVIDER STATE ---
+    let searchQuery = $state("");
+    let searchResults = $state<
+        Array<{ id: string; title: string; artist: string; stream_url: string }>
+    >([]);
+
+    async function testSearch() {
+        try {
+            searchResults = await invoke("search_provider", {
+                query: searchQuery,
+            });
+            // Svelte 5 clean logging:
+            console.log($state.snapshot(searchResults));
+        } catch (e) {
+            console.error("Bridge Error:", e);
+        }
     }
+
+    // --- PLAYBACK COMMANDS ---
+    async function playSelected(stream_url: string) {
+        await invoke("load_audio", { path: stream_url });
+    }
+
     async function play() {
         await invoke("play_audio");
     }
@@ -42,7 +60,7 @@
 </script>
 
 <main class="container">
-    <h1>Echo Core Engine Test</h1>
+    <h1>Echo Engine</h1>
 
     <div class="status-board">
         <p>
@@ -53,39 +71,56 @@
             <strong>Track:</strong>
             <span class="highlight-path">{currentTrack}</span>
         </p>
-    </div>
-
-    <div class="controls">
-        <input
-            type="text"
-            bind:value={audioPath}
-            placeholder="Absolute path to .mp3 or .flac"
-        />
-        <div class="buttons">
-            <button onclick={loadAndPlay}>Load & Play</button>
+        <div class="buttons" style="margin-top: 1rem;">
             <button onclick={play}>Play</button>
             <button onclick={pause}>Pause</button>
             <button onclick={stop}>Stop</button>
         </div>
     </div>
+
+    <div class="search-box">
+        <input
+            type="text"
+            bind:value={searchQuery}
+            placeholder="Search via Lua Provider..."
+        />
+        <button onclick={testSearch}>Search</button>
+    </div>
+
+    {#if searchResults.length > 0}
+        <div class="results">
+            {#each searchResults as track}
+                <div class="track-card">
+                    <div class="track-info">
+                        <strong>{track.title}</strong>
+                        <span>{track.artist}</span>
+                    </div>
+                    <button
+                        class="play-btn"
+                        onclick={() => playSelected(track.stream_url)}
+                        >Play</button
+                    >
+                </div>
+            {/each}
+        </div>
+    {/if}
 </main>
 
 <style>
     :global(body) {
         margin: 0;
         background-color: #1a1a1a;
+        font-family: system-ui, sans-serif;
+        color: #ffffff;
     }
     .container {
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
+        padding-top: 2rem;
         height: 100vh;
-        font-family: system-ui, sans-serif;
-        color: #ffffff;
     }
 
-    /* New Styles for the Status Board */
     .status-board {
         background: #2a2a2a;
         padding: 1.5rem;
@@ -94,9 +129,6 @@
         width: 100%;
         max-width: 400px;
         border: 1px solid #444;
-    }
-    .status-board p {
-        margin: 0.5rem 0;
     }
     .highlight {
         color: #3b82f6;
@@ -110,25 +142,47 @@
         word-break: break-all;
     }
 
-    .controls {
+    .search-box {
         display: flex;
-        flex-direction: column;
-        gap: 1rem;
+        gap: 0.5rem;
         width: 100%;
         max-width: 400px;
+        margin-bottom: 1.5rem;
     }
     input {
+        flex: 1;
         padding: 0.8rem;
         border-radius: 6px;
         border: 1px solid #333;
         background: #2a2a2a;
         color: white;
     }
-    .buttons {
+
+    .results {
         display: flex;
+        flex-direction: column;
         gap: 0.5rem;
-        justify-content: center;
+        width: 100%;
+        max-width: 400px;
     }
+    .track-card {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #222;
+        padding: 1rem;
+        border-radius: 6px;
+        border: 1px solid #333;
+    }
+    .track-info {
+        display: flex;
+        flex-direction: column;
+    }
+    .track-info span {
+        font-size: 0.85rem;
+        color: #aaa;
+    }
+
     button {
         padding: 0.6rem 1rem;
         border: none;
@@ -140,5 +194,11 @@
     }
     button:hover {
         background-color: #2563eb;
+    }
+    .play-btn {
+        background-color: #10b981;
+    }
+    .play-btn:hover {
+        background-color: #059669;
     }
 </style>
