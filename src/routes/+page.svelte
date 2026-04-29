@@ -29,14 +29,19 @@
     // --- LOCAL LIBRARY STATE ---
     let scanDirectory = $state("");
     let localTracks = $state<Array<{ id: number; title: string; file_path: string }>>([]);
+    let isScanning = $state(false);
 
     async function scanLocalLibrary() {
+        if (!scanDirectory) return;
+        isScanning = true;
         try {
             const added = await invoke("scan_local_directory", { path: scanDirectory });
             console.log(`Scanned and added ${added} tracks`);
             await loadLocalTracks();
         } catch (e) {
             console.error("Scan Error:", e);
+        } finally {
+            isScanning = false;
         }
     }
 
@@ -107,8 +112,11 @@
             type="text"
             bind:value={scanDirectory}
             placeholder="Scan Local Directory (e.g., /home/user/Music)"
+            disabled={isScanning}
         />
-        <button onclick={scanLocalLibrary}>Scan</button>
+        <button onclick={scanLocalLibrary} disabled={isScanning}>
+            {isScanning ? "Scanning..." : "Scan"}
+        </button>
     </div>
 
     {#if localTracks.length > 0}
@@ -250,13 +258,18 @@
         cursor: pointer;
         font-weight: bold;
     }
-    button:hover {
+    button:hover:not(:disabled) {
         background-color: #2563eb;
+    }
+    button:disabled {
+        background-color: #555;
+        color: #999;
+        cursor: not-allowed;
     }
     .play-btn {
         background-color: #10b981;
     }
-    .play-btn:hover {
+    .play-btn:hover:not(:disabled) {
         background-color: #059669;
     }
 </style>
