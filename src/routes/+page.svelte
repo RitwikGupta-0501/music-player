@@ -18,12 +18,35 @@
             "current-track",
             (e) => (currentTrack = e.payload),
         );
+        await loadLocalTracks();
     });
 
     onDestroy(() => {
         if (unlistenState) unlistenState();
         if (unlistenTrack) unlistenTrack();
     });
+
+    // --- LOCAL LIBRARY STATE ---
+    let scanDirectory = $state("");
+    let localTracks = $state<Array<{ id: number; title: string; file_path: string }>>([]);
+
+    async function scanLocalLibrary() {
+        try {
+            const added = await invoke("scan_local_directory", { path: scanDirectory });
+            console.log(`Scanned and added ${added} tracks`);
+            await loadLocalTracks();
+        } catch (e) {
+            console.error("Scan Error:", e);
+        }
+    }
+
+    async function loadLocalTracks() {
+        try {
+            localTracks = await invoke("get_local_tracks");
+        } catch (e) {
+            console.error("Fetch Local Tracks Error:", e);
+        }
+    }
 
     // --- LUA PROVIDER STATE ---
     let searchQuery = $state("");
@@ -78,6 +101,36 @@
         </div>
     </div>
 
+    <!-- LOCAL LIBRARY UI -->
+    <div class="search-box">
+        <input
+            type="text"
+            bind:value={scanDirectory}
+            placeholder="Scan Local Directory (e.g., /home/user/Music)"
+        />
+        <button onclick={scanLocalLibrary}>Scan</button>
+    </div>
+
+    {#if localTracks.length > 0}
+        <div class="results" style="margin-bottom: 2rem;">
+            <h2>Local Tracks</h2>
+            {#each localTracks as track}
+                <div class="track-card">
+                    <div class="track-info">
+                        <strong>{track.title}</strong>
+                        <span>{track.file_path}</span>
+                    </div>
+                    <button
+                        class="play-btn"
+                        onclick={() => playSelected(track.file_path)}
+                        >Play</button
+                    >
+                </div>
+            {/each}
+        </div>
+    {/if}
+
+    <!-- LUA PROVIDER UI -->
     <div class="search-box">
         <input
             type="text"
@@ -164,6 +217,11 @@
         gap: 0.5rem;
         width: 100%;
         max-width: 400px;
+    }
+    .results h2 {
+        font-size: 1.2rem;
+        margin-bottom: 0.5rem;
+        color: #ddd;
     }
     .track-card {
         display: flex;
