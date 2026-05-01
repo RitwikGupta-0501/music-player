@@ -9,6 +9,15 @@
     let unlistenState: () => void;
     let unlistenTrack: () => void;
 
+    // --- LOCAL LIBRARY STATE ---
+    let scanDirectory = $state("");
+    let localTracks = $state<Array<{ id: number; title: string; file_path: string }>>([]);
+    let isScanning = $state(false);
+
+    // --- SETTINGS STATE ---
+    let showSettings = $state(false);
+    let defaultScanDir = $state("");
+
     onMount(async () => {
         unlistenState = await listen<string>(
             "player-state",
@@ -19,17 +28,23 @@
             (e) => (currentTrack = e.payload),
         );
         await loadLocalTracks();
+        
+        // Load settings
+        try {
+            const savedDir = await invoke<string | null>("get_setting", { key: "default_scan_dir" });
+            if (savedDir) {
+                defaultScanDir = savedDir;
+                scanDirectory = savedDir;
+            }
+        } catch (e) {
+            console.error("Failed to load settings:", e);
+        }
     });
 
     onDestroy(() => {
         if (unlistenState) unlistenState();
         if (unlistenTrack) unlistenTrack();
     });
-
-    // --- LOCAL LIBRARY STATE ---
-    let scanDirectory = $state("");
-    let localTracks = $state<Array<{ id: number; title: string; file_path: string }>>([]);
-    let isScanning = $state(false);
 
     async function scanLocalLibrary() {
         if (!scanDirectory) return;
@@ -50,6 +65,25 @@
             localTracks = await invoke("get_local_tracks");
         } catch (e) {
             console.error("Fetch Local Tracks Error:", e);
+        }
+    }
+
+    async function clearLibrary() {
+        try {
+            await invoke("clear_local_library");
+            localTracks = [];
+            console.log("Library cleared.");
+        } catch (e) {
+            console.error("Failed to clear library:", e);
+        }
+    }
+
+    async function saveSettings() {
+        try {
+            await invoke("set_setting", { key: "default_scan_dir", value: defaultScanDir });
+            showSettings = false;
+        } catch (e) {
+            console.error("Failed to save settings:", e);
         }
     }
 
@@ -88,8 +122,9 @@
 </script>
 
 <div class="app-container">
-    <header class="header">
-        <h1>Echo <span class="text-cyan">Engine</span></h1>
+    <header class="header" style="display: flex; justify-content: space-between; align-items: center; padding: 2rem;">
+        <h1 style="margin: 0; text-align: center; flex: 1;">Echo <span class="text-cyan">Engine</span></h1>
+        <button class="primary" style="padding: 0.5rem 1rem;" onclick={() => showSettings = true}>⚙ Settings</button>
     </header>
 
     <main class="main-content">
@@ -165,4 +200,33 @@
             <button onclick={stop} style="border-color: var(--color-danger); color: var(--color-danger);">Stop</button>
         </div>
     </div>
+
+    <!-- SETTINGS MODAL -->
+    {#if showSettings}
+        <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(4px);">
+            <div class="glass-panel" style="padding: 2rem; width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Settings</h2>
+                    <button style="padding: 0.2rem 0.5rem;" onclick={() => showSettings = false}>✕</button>
+                </div>
+                
+                <div>
+                    <label style="display: block; margin-bottom: 0.5rem; color: var(--color-chalk-muted);">Default Scan Directory</label>
+                    <input type="text" bind:value={defaultScanDir} placeholder="/home/user/Music" />
+                </div>
+
+                <div style="border-top: 1px solid var(--glass-border); padding-top: 1.5rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: var(--color-chalk-muted);">Data Management</label>
+                    <button style="border-color: var(--color-danger); color: var(--color-danger); width: 100%;" onclick={clearLibrary}>
+                        Wipe Local Database
+                    </button>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
+                    <button onclick={() => showSettings = false}>Cancel</button>
+                    <button class="primary" onclick={saveSettings}>Save Changes</button>
+                </div>
+            </div>
+        </div>
+    {/if}
 </div>

@@ -46,6 +46,13 @@ fn init_db() -> SqlResult<Connection> {
         )",
         [],
     )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    )?;
     Ok(conn)
 }
 
@@ -174,6 +181,38 @@ async fn get_local_tracks(state: State<'_, AppState>) -> Result<Vec<LocalTrack>,
     Ok(tracks)
 }
 
+#[tauri::command]
+async fn clear_local_library(state: State<'_, AppState>) -> Result<(), String> {
+    if let Ok(conn) = state.db_conn.lock() {
+        conn.execute("DELETE FROM tracks", []).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_setting(state: State<'_, AppState>, key: String) -> Result<Option<String>, String> {
+    if let Ok(conn) = state.db_conn.lock() {
+        let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1").map_err(|e| e.to_string())?;
+        let mut rows = stmt.query([&key]).map_err(|e| e.to_string())?;
+        if let Ok(Some(row)) = rows.next() {
+            let value: String = row.get(0).map_err(|e| e.to_string())?;
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+async fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    if let Ok(conn) = state.db_conn.lock() {
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
+            (&key, &value),
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // 5. Async Tauri Commands
 #[tauri::command]
 async fn load_audio(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -239,7 +278,10 @@ pub fn run() {
             stop_audio,
             search_provider,
             scan_local_directory,
-            get_local_tracks
+            get_local_tracks,
+            clear_local_library,
+            get_setting,
+            set_setting
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
