@@ -87,189 +87,82 @@
     }
 </script>
 
-<main class="container">
-    <h1>Echo Engine</h1>
+<div class="app-container">
+    <header class="header">
+        <h1>Echo <span class="text-cyan">Engine</span></h1>
+    </header>
 
-    <div class="status-board">
-        <p>
-            <strong>State:</strong>
-            <span class="highlight">{playbackState}</span>
-        </p>
-        <p>
-            <strong>Track:</strong>
-            <span class="highlight-path">{currentTrack}</span>
-        </p>
-        <div class="buttons" style="margin-top: 1rem;">
+    <main class="main-content">
+        <!-- LOCAL LIBRARY SECTION -->
+        <section class="glass-panel" style="padding: 1.5rem;">
+            <h2 style="margin-bottom: 1.5rem;">Local Library</h2>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem;">
+                <input
+                    type="text"
+                    bind:value={scanDirectory}
+                    placeholder="Scan path (e.g., /home/user/Music)"
+                    disabled={isScanning}
+                />
+                <button class="primary" onclick={scanLocalLibrary} disabled={isScanning}>
+                    {isScanning ? "..." : "Scan"}
+                </button>
+            </div>
+
+            {#if localTracks.length > 0}
+                <div class="track-list">
+                    {#each localTracks as track}
+                        <div class="track-card">
+                            <div style="display: flex; flex-direction: column; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-right: 1rem;">
+                                <strong>{track.title}</strong>
+                                <span class="text-muted" style="overflow: hidden; text-overflow: ellipsis;">{track.file_path}</span>
+                            </div>
+                            <button onclick={() => playSelected(track.file_path)}>Play</button>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+        </section>
+
+        <!-- LUA PROVIDER SECTION -->
+        <section class="glass-panel" style="padding: 1.5rem;">
+            <h2 style="margin-bottom: 1.5rem;">Network Providers</h2>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem;">
+                <input
+                    type="text"
+                    bind:value={searchQuery}
+                    placeholder="Search query..."
+                />
+                <button class="primary" onclick={testSearch}>Search</button>
+            </div>
+
+            {#if searchResults.length > 0}
+                <div class="track-list">
+                    {#each searchResults as track}
+                        <div class="track-card">
+                            <div style="display: flex; flex-direction: column; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-right: 1rem;">
+                                <strong>{track.title}</strong>
+                                <span class="text-muted">{track.artist}</span>
+                            </div>
+                            <button onclick={() => playSelected(track.stream_url)}>Play</button>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+        </section>
+    </main>
+
+    <!-- GLASSMORPHIC BOTTOM PLAYER -->
+    <div class="glass-panel bottom-player">
+        <div class="player-info">
+            <h3 class="text-cyan">{playbackState}</h3>
+            <span class="text-muted" style="max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                {currentTrack !== "None" ? currentTrack : "Ready to play"}
+            </span>
+        </div>
+        <div class="player-controls">
             <button onclick={play}>Play</button>
             <button onclick={pause}>Pause</button>
-            <button onclick={stop}>Stop</button>
+            <button onclick={stop} style="border-color: var(--color-danger); color: var(--color-danger);">Stop</button>
         </div>
     </div>
-
-    <!-- LOCAL LIBRARY UI -->
-    <div class="search-box">
-        <input
-            type="text"
-            bind:value={scanDirectory}
-            placeholder="Scan Local Directory (e.g., /home/user/Music)"
-            disabled={isScanning}
-        />
-        <button onclick={scanLocalLibrary} disabled={isScanning}>
-            {isScanning ? "Scanning..." : "Scan"}
-        </button>
-    </div>
-
-    {#if localTracks.length > 0}
-        <div class="results" style="margin-bottom: 2rem;">
-            <h2>Local Tracks</h2>
-            {#each localTracks as track}
-                <div class="track-card">
-                    <div class="track-info">
-                        <strong>{track.title}</strong>
-                        <span>{track.file_path}</span>
-                    </div>
-                    <button
-                        class="play-btn"
-                        onclick={() => playSelected(track.file_path)}
-                        >Play</button
-                    >
-                </div>
-            {/each}
-        </div>
-    {/if}
-
-    <!-- LUA PROVIDER UI -->
-    <div class="search-box">
-        <input
-            type="text"
-            bind:value={searchQuery}
-            placeholder="Search via Lua Provider..."
-        />
-        <button onclick={testSearch}>Search</button>
-    </div>
-
-    {#if searchResults.length > 0}
-        <div class="results">
-            {#each searchResults as track}
-                <div class="track-card">
-                    <div class="track-info">
-                        <strong>{track.title}</strong>
-                        <span>{track.artist}</span>
-                    </div>
-                    <button
-                        class="play-btn"
-                        onclick={() => playSelected(track.stream_url)}
-                        >Play</button
-                    >
-                </div>
-            {/each}
-        </div>
-    {/if}
-</main>
-
-<style>
-    :global(body) {
-        margin: 0;
-        background-color: #1a1a1a;
-        font-family: system-ui, sans-serif;
-        color: #ffffff;
-    }
-    .container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding-top: 2rem;
-        height: 100vh;
-    }
-
-    .status-board {
-        background: #2a2a2a;
-        padding: 1.5rem;
-        border-radius: 8px;
-        margin-bottom: 2rem;
-        width: 100%;
-        max-width: 400px;
-        border: 1px solid #444;
-    }
-    .highlight {
-        color: #3b82f6;
-        font-weight: bold;
-        text-transform: uppercase;
-    }
-    .highlight-path {
-        color: #10b981;
-        font-family: monospace;
-        font-size: 0.85rem;
-        word-break: break-all;
-    }
-
-    .search-box {
-        display: flex;
-        gap: 0.5rem;
-        width: 100%;
-        max-width: 400px;
-        margin-bottom: 1.5rem;
-    }
-    input {
-        flex: 1;
-        padding: 0.8rem;
-        border-radius: 6px;
-        border: 1px solid #333;
-        background: #2a2a2a;
-        color: white;
-    }
-
-    .results {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        width: 100%;
-        max-width: 400px;
-    }
-    .results h2 {
-        font-size: 1.2rem;
-        margin-bottom: 0.5rem;
-        color: #ddd;
-    }
-    .track-card {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: #222;
-        padding: 1rem;
-        border-radius: 6px;
-        border: 1px solid #333;
-    }
-    .track-info {
-        display: flex;
-        flex-direction: column;
-    }
-    .track-info span {
-        font-size: 0.85rem;
-        color: #aaa;
-    }
-
-    button {
-        padding: 0.6rem 1rem;
-        border: none;
-        border-radius: 6px;
-        background-color: #3b82f6;
-        color: white;
-        cursor: pointer;
-        font-weight: bold;
-    }
-    button:hover:not(:disabled) {
-        background-color: #2563eb;
-    }
-    button:disabled {
-        background-color: #555;
-        color: #999;
-        cursor: not-allowed;
-    }
-    .play-btn {
-        background-color: #10b981;
-    }
-    .play-btn:hover:not(:disabled) {
-        background-color: #059669;
-    }
-</style>
+</div>
