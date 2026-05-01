@@ -1,0 +1,182 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;700&display=swap');
+
+:root {
+  /* Color Palette - Cinematic Chalk on Slate */
+  --color-bg: #0b0c10;
+  --color-surface: #1f2833;
+  --color-surface-light: #2a3644;
+  --color-chalk: #c5c6c7;
+  --color-chalk-muted: #8b949e;
+  --color-cyan: #66fcf1;
+  --color-teal: #45a29e;
+  --color-danger: #ff4c4c;
+  
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  
+  --glass-bg: rgba(31, 40, 51, 0.6);
+  --glass-border: rgba(197, 198, 199, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background: radial-gradient(circle at 50% 0%, #1f2833 0%, var(--color-bg) 70%);
+  background-attachment: fixed;
+  color: var(--color-chalk);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Typography Utilities */
+.text-cyan { color: var(--color-cyan); }
+.text-teal { color: var(--color-teal); }
+.text-muted { color: var(--color-chalk-muted); font-size: 0.85rem;}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* Forms */
+input[type="text"] {
+  background: rgba(11, 12, 16, 0.5);
+  border: 1px solid var(--color-surface-light);
+  color: var(--color-chalk);
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  outline: none;
+  width: 100%;
+}
+input[type="text"]:focus {
+  border-color: var(--color-cyan);
+  box-shadow: 0 0 0 2px rgba(102, 252, 241, 0.2);
+}
+input[type="text"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Buttons */
+button {
+  background: var(--color-surface-light);
+  color: var(--color-chalk);
+  border: 1px solid var(--glass-border);
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+button:hover:not(:disabled) {
+  background: var(--color-teal);
+  color: #fff;
+  border-color: transparent;
+  transform: translateY(-1px);
+}
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--color-cyan);
+  color: var(--color-bg);
+  border-color: transparent;
+}
+button.primary:hover:not(:disabled) {
+  background: #fff;
+  box-shadow: 0 0 15px rgba(102, 252, 241, 0.4);
+}
+
+/* Layout Utilities */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding-bottom: 120px; /* Space for the bottom player */
+}
+.header {
+  padding: 2rem;
+  text-align: center;
+}
+.main-content {
+  flex: 1;
+  padding: 0 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  overflow-y: auto;
+}
+
+/* Track Cards */
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.track-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(31, 40, 51, 0.4);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+.track-card:hover {
+  background: rgba(31, 40, 51, 0.8);
+  border-color: var(--glass-border);
+}
+
+/* Bottom Player */
+.bottom-player {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 1.5rem 3rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 50;
+  border-radius: 20px 20px 0 0;
+  border-bottom: none;
+}
+.player-info {
+  display: flex;
+  flex-direction: column;
+}
+.player-controls {
+  display: flex;
+  gap: 1rem;
+}
