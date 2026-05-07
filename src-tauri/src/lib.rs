@@ -37,6 +37,14 @@ pub struct Playlist {
     pub name: String,
 }
 
+#[derive(Serialize, Clone)]
+struct PlayerSync {
+    state: String,
+    position: f64,
+    duration: f64,
+    track: String,
+}
+
 // 1. Message Payload
 pub enum AudioCommand {
     Load(String),
@@ -116,14 +124,28 @@ fn init_db<P: AsRef<std::path::Path>>(db_path: P) -> SqlResult<Connection> {
     Ok(conn)
 }
 
-// 4. The Audio Thread (Now with Event Emission)
+// 4. The Audio Thread (Interpolation Strategy: emit sync events on state changes only)
 fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) {
     thread::spawn(move || {
         let (_stream, stream_handle) =
             OutputStream::try_default().expect("Failed to get audio output");
         let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink");
 
+        let mut current_track_path = String::new();
+        let mut current_duration: f64 = 0.0;
+
+        // Helper closure to emit a single structured sync event
+        let emit_sync = |handle: &AppHandle, state: &str, sink: &Sink, track: &str, duration: f64| {
+            let _ = handle.emit("player-sync", PlayerSync {
+                state: state.to_string(),
+                position: sink.get_pos().as_secs_f64(),
+                duration,
+                track: track.to_string(),
+            });
+        };
+
         loop {
+            // Block on the channel — zero CPU when idle
             if let Ok(cmd) = rx.recv() {
                 match cmd {
                     AudioCommand::Load(path) => {
@@ -131,25 +153,31 @@ fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) {
                         if let Ok(file) = File::open(&path) {
                             let reader = BufReader::new(file);
                             if let Ok(decoder) = Decoder::new(reader) {
+                                use rodio::Source;
+                                current_duration = decoder.total_duration()
+                                    .map(|d| d.as_secs_f64())
+                                    .unwrap_or(0.0);
+                                
                                 sink.append(decoder);
                                 sink.play();
-                                // Emit state back to Svelte
-                                let _ = app_handle.emit("player-state", "Playing");
-                                let _ = app_handle.emit("current-track", path.clone());
+                                current_track_path = path;
+                                emit_sync(&app_handle, "Playing", &sink, &current_track_path, current_duration);
                             }
                         }
                     }
                     AudioCommand::Play => {
                         sink.play();
-                        let _ = app_handle.emit("player-state", "Playing");
+                        emit_sync(&app_handle, "Playing", &sink, &current_track_path, current_duration);
                     }
                     AudioCommand::Pause => {
                         sink.pause();
-                        let _ = app_handle.emit("player-state", "Paused");
+                        emit_sync(&app_handle, "Paused", &sink, &current_track_path, current_duration);
                     }
                     AudioCommand::Stop => {
                         sink.stop();
-                        let _ = app_handle.emit("player-state", "Stopped");
+                        current_track_path.clear();
+                        current_duration = 0.0;
+                        emit_sync(&app_handle, "Stopped", &sink, "", 0.0);
                     }
                 }
             }
@@ -221,21 +249,24 @@ async fn scan_local_directory(state: State<'_, AppState>, path: String) -> Resul
     if let Ok(mut conn) = state.db_conn.lock() {
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         for (title, artist, album, track_number, file_path) in tracks {
+            println!("Processing found track: {} ({})", title, file_path);
             let mut album_id: Option<i64> = None;
             
+            // Use fallback for missing album/artist info so they show up in the UI
+            let album_title = album.unwrap_or_else(|| "Unknown Album".to_string());
+            let album_artist = artist.clone().unwrap_or_else(|| "Unknown Artist".to_string());
+
             // Insert or get album
-            if let Some(album_title) = album {
-                let _ = tx.execute(
-                    "INSERT OR IGNORE INTO albums (title, artist) VALUES (?1, ?2)",
-                    (&album_title, &artist),
-                );
-                
-                // Get the album ID
-                if let Ok(mut stmt) = tx.prepare("SELECT id FROM albums WHERE title = ?1 AND (artist = ?2 OR (artist IS NULL AND ?2 IS NULL))") {
-                    if let Ok(mut rows) = stmt.query((&album_title, &artist)) {
-                        if let Ok(Some(row)) = rows.next() {
-                            album_id = row.get(0).ok();
-                        }
+            let _ = tx.execute(
+                "INSERT OR IGNORE INTO albums (title, artist) VALUES (?1, ?2)",
+                (&album_title, &album_artist),
+            );
+            
+            // Get the album ID
+            if let Ok(mut stmt) = tx.prepare("SELECT id FROM albums WHERE title = ?1 AND artist = ?2") {
+                if let Ok(mut rows) = stmt.query((&album_title, &album_artist)) {
+                    if let Ok(Some(row)) = rows.next() {
+                        album_id = row.get(0).ok();
                     }
                 }
             }
@@ -244,8 +275,12 @@ async fn scan_local_directory(state: State<'_, AppState>, path: String) -> Resul
                 "INSERT OR IGNORE INTO tracks (title, artist, album_id, track_number, file_path) VALUES (?1, ?2, ?3, ?4, ?5)",
                 (&title, &artist, &album_id, &track_number, &file_path),
             );
-            if res.unwrap_or(0) > 0 {
+            
+            if res.is_ok() && res.unwrap() > 0 {
+                println!("Successfully added to DB: {}", title);
                 added += 1;
+            } else {
+                println!("Track already exists or failed to insert: {}", title);
             }
         }
         tx.commit().map_err(|e| e.to_string())?;
