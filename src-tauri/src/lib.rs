@@ -5,7 +5,7 @@ use std::io::BufReader;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::WalkDir;
 use serde::{Serialize, Deserialize};
 use id3::TagLike;
@@ -35,9 +35,8 @@ struct AppState {
 }
 
 // 3. Database Initialization
-fn init_db() -> SqlResult<Connection> {
-    // Creates a local file for now.
-    let conn = Connection::open("echo_library.db")?;
+fn init_db<P: AsRef<std::path::Path>>(db_path: P) -> SqlResult<Connection> {
+    let conn = Connection::open(db_path)?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tracks (
             id INTEGER PRIMARY KEY,
@@ -98,14 +97,17 @@ fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) {
 }
 
 #[tauri::command]
-async fn search_provider(query: String) -> Result<Vec<TrackResult>, String> {
+async fn search_provider(app_handle: AppHandle, query: String) -> Result<Vec<TrackResult>, String> {
     // In a production app, we would load the manager once into Tauri state,
     // but for testing the bridge, we spin it up on demand.
     let manager = ProviderManager::new().map_err(|e| e.to_string())?;
 
-    // We point this to our local test script
+    let app_data_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let provider_path = app_data_dir.join("providers").join("dummy_search.lua");
+
+    // We point this to our dynamically resolved path
     let results = manager
-        .search("../providers/dummy_search.lua", &query)
+        .search(provider_path.to_string_lossy().as_ref(), &query)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -213,6 +215,22 @@ async fn set_setting(state: State<'_, AppState>, key: String, value: String) -> 
     Ok(())
 }
 
+#[tauri::command]
+async fn factory_reset(app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    // 1. Clear database completely
+    if let Ok(conn) = state.db_conn.lock() {
+        let _ = conn.execute("DELETE FROM tracks", []);
+        let _ = conn.execute("DELETE FROM settings", []);
+    }
+
+    // 2. Remove providers dir
+    let app_data_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let providers_dir = app_data_dir.join("providers");
+    let _ = std::fs::remove_dir_all(&providers_dir);
+
+    Ok(())
+}
+
 // 5. Async Tauri Commands
 #[tauri::command]
 async fn load_audio(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -258,18 +276,52 @@ async fn stop_audio(state: State<'_, AppState>) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let (tx, rx) = mpsc::channel();
-    let db = init_db().expect("Failed to initialize SQLite");
 
     tauri::Builder::default()
-        .setup(|app| {
-            // Pass a clone of the AppHandle into the audio thread
+        .setup(move |app| {
             let handle = app.handle().clone();
+            
+            // 1. Resolve OS directories
+            let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+            let db_dir = app_data_dir.join("database");
+            let providers_dir = app_data_dir.join("providers");
+            
+            std::fs::create_dir_all(&db_dir).expect("Failed to create database directory");
+            std::fs::create_dir_all(&providers_dir).expect("Failed to create providers directory");
+            
+            // 2. Initialize Database
+            let db_path = db_dir.join("echo_library.db");
+            let db = init_db(&db_path).expect("Failed to initialize SQLite");
+            
+            // 3. Pre-populate default providers if the directory is empty
+            if let Ok(entries) = std::fs::read_dir(&providers_dir) {
+                if entries.count() == 0 {
+                    if let Ok(resource_dir) = app.path().resource_dir() {
+                        let bundled_providers = resource_dir.join("providers");
+                        if bundled_providers.exists() {
+                            if let Ok(bundled_entries) = std::fs::read_dir(bundled_providers) {
+                                for entry in bundled_entries.flatten() {
+                                    if entry.path().is_file() {
+                                        if let Some(filename) = entry.file_name().to_str() {
+                                            let dest_path = providers_dir.join(filename);
+                                            let _ = std::fs::copy(entry.path(), dest_path);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. Manage State & Start Background Threads
+            app.manage(AppState {
+                tx: Mutex::new(tx),
+                db_conn: Mutex::new(db),
+            });
+            
             start_audio_thread(rx, handle);
             Ok(())
-        })
-        .manage(AppState {
-            tx: Mutex::new(tx),
-            db_conn: Mutex::new(db),
         })
         .invoke_handler(tauri::generate_handler![
             load_audio,
@@ -281,7 +333,8 @@ pub fn run() {
             get_local_tracks,
             clear_local_library,
             get_setting,
-            set_setting
+            set_setting,
+            factory_reset
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
