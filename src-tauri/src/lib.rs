@@ -14,10 +14,27 @@ mod providers;
 use providers::{ProviderManager, TrackResult};
 
 #[derive(Serialize, Deserialize)]
+pub struct Album {
+    pub id: i64,
+    pub title: String,
+    pub artist: Option<String>,
+    pub cover_art_path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct LocalTrack {
     pub id: i64,
     pub title: String,
+    pub artist: Option<String>,
+    pub album_id: Option<i64>,
+    pub track_number: Option<i64>,
     pub file_path: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Playlist {
+    pub id: i64,
+    pub name: String,
 }
 
 // 1. Message Payload
@@ -37,16 +54,60 @@ struct AppState {
 // 3. Database Initialization
 fn init_db<P: AsRef<std::path::Path>>(db_path: P) -> SqlResult<Connection> {
     let conn = Connection::open(db_path)?;
+    conn.execute("PRAGMA foreign_keys = ON", [])?;
+
+    // Drop existing tables to ensure a clean slate as requested
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS playlist_tracks;
+         DROP TABLE IF EXISTS playlists;
+         DROP TABLE IF EXISTS tracks;
+         DROP TABLE IF EXISTS albums;
+         DROP TABLE IF EXISTS settings;"
+    )?;
+
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS tracks (
+        "CREATE TABLE albums (
             id INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
-            file_path TEXT UNIQUE NOT NULL
+            artist TEXT,
+            cover_art_path TEXT,
+            UNIQUE(title, artist)
         )",
         [],
     )?;
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS settings (
+        "CREATE TABLE tracks (
+            id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            artist TEXT,
+            album_id INTEGER,
+            track_number INTEGER,
+            file_path TEXT UNIQUE NOT NULL,
+            FOREIGN KEY(album_id) REFERENCES albums(id)
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE playlists (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE playlist_tracks (
+            id INTEGER PRIMARY KEY,
+            playlist_id INTEGER,
+            track_id INTEGER,
+            position INTEGER,
+            FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+            FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         )",
@@ -128,15 +189,27 @@ async fn scan_local_directory(state: State<'_, AppState>, path: String) -> Resul
                     let ext = ext.to_lowercase();
                     if ext == "mp3" || ext == "flac" || ext == "wav" {
                         let mut title = entry_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let mut artist = None;
+                        let mut album = None;
+                        let mut track_number = None;
                         
-                        // Try to extract ID3 title
+                        // Try to extract ID3 tags
                         if let Ok(tag) = id3::Tag::read_from_path(entry_path) {
                             if let Some(tag_title) = tag.title() {
                                 title = tag_title.to_string();
                             }
+                            if let Some(tag_artist) = tag.artist() {
+                                artist = Some(tag_artist.to_string());
+                            }
+                            if let Some(tag_album) = tag.album() {
+                                album = Some(tag_album.to_string());
+                            }
+                            if let Some(tag_track) = tag.track() {
+                                track_number = Some(tag_track as i64);
+                            }
                         }
                         
-                        found_tracks.push((title, entry_path.to_string_lossy().to_string()));
+                        found_tracks.push((title, artist, album, track_number, entry_path.to_string_lossy().to_string()));
                     }
                 }
             }
@@ -145,17 +218,37 @@ async fn scan_local_directory(state: State<'_, AppState>, path: String) -> Resul
     }).await.map_err(|e| e.to_string())?;
 
     let mut added = 0;
-    // Keep the mutex lock extremely brief by just doing a batch insert
-    if let Ok(conn) = state.db_conn.lock() {
-        for (title, file_path) in tracks {
-            let res = conn.execute(
-                "INSERT OR IGNORE INTO tracks (title, file_path) VALUES (?1, ?2)",
-                (&title, &file_path),
+    if let Ok(mut conn) = state.db_conn.lock() {
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        for (title, artist, album, track_number, file_path) in tracks {
+            let mut album_id: Option<i64> = None;
+            
+            // Insert or get album
+            if let Some(album_title) = album {
+                let _ = tx.execute(
+                    "INSERT OR IGNORE INTO albums (title, artist) VALUES (?1, ?2)",
+                    (&album_title, &artist),
+                );
+                
+                // Get the album ID
+                if let Ok(mut stmt) = tx.prepare("SELECT id FROM albums WHERE title = ?1 AND (artist = ?2 OR (artist IS NULL AND ?2 IS NULL))") {
+                    if let Ok(mut rows) = stmt.query((&album_title, &artist)) {
+                        if let Ok(Some(row)) = rows.next() {
+                            album_id = row.get(0).ok();
+                        }
+                    }
+                }
+            }
+
+            let res = tx.execute(
+                "INSERT OR IGNORE INTO tracks (title, artist, album_id, track_number, file_path) VALUES (?1, ?2, ?3, ?4, ?5)",
+                (&title, &artist, &album_id, &track_number, &file_path),
             );
             if res.unwrap_or(0) > 0 {
                 added += 1;
             }
         }
+        tx.commit().map_err(|e| e.to_string())?;
     }
     
     Ok(added)
@@ -165,12 +258,15 @@ async fn scan_local_directory(state: State<'_, AppState>, path: String) -> Resul
 async fn get_local_tracks(state: State<'_, AppState>) -> Result<Vec<LocalTrack>, String> {
     let mut tracks = Vec::new();
     if let Ok(conn) = state.db_conn.lock() {
-        let mut stmt = conn.prepare("SELECT id, title, file_path FROM tracks").map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT id, title, artist, album_id, track_number, file_path FROM tracks").map_err(|e| e.to_string())?;
         let track_iter = stmt.query_map([], |row| {
             Ok(LocalTrack {
                 id: row.get(0)?,
                 title: row.get(1)?,
-                file_path: row.get(2)?,
+                artist: row.get(2)?,
+                album_id: row.get(3)?,
+                track_number: row.get(4)?,
+                file_path: row.get(5)?,
             })
         }).map_err(|e| e.to_string())?;
 
@@ -181,6 +277,145 @@ async fn get_local_tracks(state: State<'_, AppState>) -> Result<Vec<LocalTrack>,
         }
     }
     Ok(tracks)
+}
+
+#[tauri::command]
+async fn get_albums(state: State<'_, AppState>) -> Result<Vec<Album>, String> {
+    let mut albums = Vec::new();
+    if let Ok(conn) = state.db_conn.lock() {
+        let mut stmt = conn.prepare("SELECT id, title, artist, cover_art_path FROM albums ORDER BY artist, title").map_err(|e| e.to_string())?;
+        let album_iter = stmt.query_map([], |row| {
+            Ok(Album {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                artist: row.get(2)?,
+                cover_art_path: row.get(3)?,
+            })
+        }).map_err(|e| e.to_string())?;
+
+        for album in album_iter {
+            if let Ok(a) = album {
+                albums.push(a);
+            }
+        }
+    }
+    Ok(albums)
+}
+
+#[tauri::command]
+async fn get_album_tracks(state: State<'_, AppState>, album_id: i64) -> Result<Vec<LocalTrack>, String> {
+    let mut tracks = Vec::new();
+    if let Ok(conn) = state.db_conn.lock() {
+        let mut stmt = conn.prepare("SELECT id, title, artist, album_id, track_number, file_path FROM tracks WHERE album_id = ?1 ORDER BY track_number").map_err(|e| e.to_string())?;
+        let track_iter = stmt.query_map([&album_id], |row| {
+            Ok(LocalTrack {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                artist: row.get(2)?,
+                album_id: row.get(3)?,
+                track_number: row.get(4)?,
+                file_path: row.get(5)?,
+            })
+        }).map_err(|e| e.to_string())?;
+
+        for track in track_iter {
+            if let Ok(t) = track {
+                tracks.push(t);
+            }
+        }
+    }
+    Ok(tracks)
+}
+
+#[tauri::command]
+async fn get_playlists(state: State<'_, AppState>) -> Result<Vec<Playlist>, String> {
+    let mut playlists = Vec::new();
+    if let Ok(conn) = state.db_conn.lock() {
+        let mut stmt = conn.prepare("SELECT id, name FROM playlists ORDER BY created_at").map_err(|e| e.to_string())?;
+        let playlist_iter = stmt.query_map([], |row| {
+            Ok(Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        }).map_err(|e| e.to_string())?;
+
+        for playlist in playlist_iter {
+            if let Ok(p) = playlist {
+                playlists.push(p);
+            }
+        }
+    }
+    Ok(playlists)
+}
+
+#[tauri::command]
+async fn create_playlist(state: State<'_, AppState>, name: String) -> Result<i64, String> {
+    if let Ok(conn) = state.db_conn.lock() {
+        conn.execute("INSERT INTO playlists (name) VALUES (?1)", [&name]).map_err(|e| e.to_string())?;
+        return Ok(conn.last_insert_rowid());
+    }
+    Err("Failed to acquire lock".into())
+}
+
+#[tauri::command]
+async fn add_to_playlist(state: State<'_, AppState>, playlist_id: i64, track_id: i64) -> Result<(), String> {
+    if let Ok(conn) = state.db_conn.lock() {
+        let mut stmt = conn.prepare("SELECT COALESCE(MAX(position), 0) FROM playlist_tracks WHERE playlist_id = ?1").map_err(|e| e.to_string())?;
+        let max_pos: i64 = stmt.query_row([&playlist_id], |row| row.get(0)).unwrap_or(0);
+        
+        conn.execute("INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)", [&playlist_id, &track_id, &(max_pos + 1)]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_playlist_tracks(state: State<'_, AppState>, playlist_id: i64) -> Result<Vec<LocalTrack>, String> {
+    let mut tracks = Vec::new();
+    if let Ok(conn) = state.db_conn.lock() {
+        let mut stmt = conn.prepare("SELECT t.id, t.title, t.artist, t.album_id, t.track_number, t.file_path FROM tracks t JOIN playlist_tracks pt ON t.id = pt.track_id WHERE pt.playlist_id = ?1 ORDER BY pt.position").map_err(|e| e.to_string())?;
+        let track_iter = stmt.query_map([&playlist_id], |row| {
+            Ok(LocalTrack {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                artist: row.get(2)?,
+                album_id: row.get(3)?,
+                track_number: row.get(4)?,
+                file_path: row.get(5)?,
+            })
+        }).map_err(|e| e.to_string())?;
+
+        for track in track_iter {
+            if let Ok(t) = track {
+                tracks.push(t);
+            }
+        }
+    }
+    Ok(tracks)
+}
+
+#[tauri::command]
+async fn extract_and_cache_artwork(app_handle: AppHandle, track_id: i64, file_path: String) -> Result<Option<String>, String> {
+    let app_data_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let artwork_dir = app_data_dir.join("artwork");
+    std::fs::create_dir_all(&artwork_dir).map_err(|e| e.to_string())?;
+    
+    let dest_path = artwork_dir.join(format!("{}.jpg", track_id));
+    if dest_path.exists() {
+        return Ok(Some(dest_path.to_string_lossy().to_string()));
+    }
+    
+    let result = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+        if let Ok(tag) = id3::Tag::read_from_path(&file_path) {
+            if let Some(pic) = tag.pictures().next() {
+                if let Ok(_) = std::fs::write(&dest_path, &pic.data) {
+                    return Ok(Some(dest_path.to_string_lossy().to_string()));
+                }
+            }
+        }
+        Ok(None)
+    }).await.map_err(|e| e.to_string())?;
+    
+    Ok(result?)
 }
 
 #[tauri::command]
@@ -331,6 +566,13 @@ pub fn run() {
             search_provider,
             scan_local_directory,
             get_local_tracks,
+            get_albums,
+            get_album_tracks,
+            get_playlists,
+            create_playlist,
+            add_to_playlist,
+            get_playlist_tracks,
+            extract_and_cache_artwork,
             clear_local_library,
             get_setting,
             set_setting,
