@@ -51,6 +51,7 @@ pub enum AudioCommand {
     Play,
     Pause,
     Stop,
+    Seek(f64),
 }
 
 // 2. Global State
@@ -178,6 +179,17 @@ fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) {
                         current_track_path.clear();
                         current_duration = 0.0;
                         emit_sync(&app_handle, "Stopped", &sink, "", 0.0);
+                    }
+                    AudioCommand::Seek(pos) => {
+                        let _ = sink.try_seek(std::time::Duration::from_secs_f64(pos));
+                        let state_str = if sink.is_paused() { "Paused" } else { "Playing" };
+                        // Emit the *requested* position, not sink.get_pos() which is stale after try_seek
+                        let _ = app_handle.emit("player-sync", PlayerSync {
+                            state: state_str.to_string(),
+                            position: pos,
+                            duration: current_duration,
+                            track: current_track_path.clone(),
+                        });
                     }
                 }
             }
@@ -542,6 +554,12 @@ async fn stop_audio(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn seek_audio(state: State<'_, AppState>, position: f64) -> Result<(), String> {
+    let tx = state.tx.lock().map_err(|e| e.to_string())?;
+    tx.send(AudioCommand::Seek(position)).map_err(|e| e.to_string())
+}
+
 // 6. App Initialization
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -598,6 +616,7 @@ pub fn run() {
             play_audio,
             pause_audio,
             stop_audio,
+            seek_audio,
             search_provider,
             scan_local_directory,
             get_local_tracks,

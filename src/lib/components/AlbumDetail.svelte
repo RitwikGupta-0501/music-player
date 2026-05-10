@@ -15,8 +15,16 @@
         }
     });
 
-    function playTrack(path: string) {
-        audioStore.load(path);
+    function playTrack(index: number) {
+        audioStore.setQueue(
+            tracks.map(t => ({
+                id: t.id,
+                title: t.title,
+                artist: t.artist,
+                file_path: t.file_path,
+            })),
+            index
+        );
     }
 </script>
 
@@ -42,7 +50,7 @@
     {#each tracks as track, i}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="track-card" onclick={() => playTrack(track.file_path)}>
+        <div class="track-card" onclick={() => playTrack(i)}>
             <div style="display: flex; gap: 1rem; align-items: center;">
                 <span class="text-muted" style="width: 20px; text-align: right;">{track.track_number || i + 1}</span>
                 <strong>{track.title}</strong>

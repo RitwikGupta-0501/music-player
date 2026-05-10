@@ -1,16 +1,12 @@
 <script lang="ts">
     import { audioStore } from "$lib/stores/audio.svelte";
 
-    function handlePlay() {
-        audioStore.play();
-    }
-
-    function handlePause() {
-        audioStore.pause();
-    }
-
-    function handleStop() {
-        audioStore.stop();
+    function handlePlayPause() {
+        if (audioStore.playbackState === "Playing") {
+            audioStore.pause();
+        } else {
+            audioStore.play();
+        }
     }
 
     function formatTime(seconds: number) {
@@ -19,30 +15,74 @@
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
+    function handleSeek(e: MouseEvent) {
+        if (audioStore.duration <= 0) return;
+        const track = e.currentTarget as HTMLElement;
+        const rect = track.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        audioStore.seek(pct * audioStore.duration);
+    }
+
     let progress = $derived(audioStore.duration > 0 ? (audioStore.currentTime / audioStore.duration) * 100 : 0);
+
+    // Display-friendly track name (strip path, show just filename)
+    let displayTrack = $derived(() => {
+        if (!audioStore.currentQueueTrack) return audioStore.currentTrack !== "None" ? audioStore.currentTrack : "Ready to play";
+        const t = audioStore.currentQueueTrack;
+        return t.artist ? `${t.title} — ${t.artist}` : t.title;
+    });
+
+    function repeatLabel(): string {
+        if (audioStore.repeatMode === 'one') return '🔂';
+        if (audioStore.repeatMode === 'all') return '🔁';
+        return '🔁';
+    }
 </script>
 
 <div class="bottom-player">
+    <!-- Track Info -->
     <div class="player-info">
-        <h3 class="text-cyan">{audioStore.playbackState}</h3>
-        <span class="text-muted" style="max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            {audioStore.currentTrack !== "None" ? audioStore.currentTrack : "Ready to play"}
-        </span>
+        <span class="now-playing-title">{displayTrack()}</span>
+        {#if audioStore.queue.length > 0}
+            <span class="text-muted">Track {audioStore.queueIndex + 1} of {audioStore.queue.length}</span>
+        {/if}
     </div>
 
+    <!-- Progress Bar -->
     <div class="progress-section">
         <span class="time">{formatTime(audioStore.currentTime)}</span>
-        <div class="progress-track" style="--progress: {progress}%">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="progress-track" style="--progress: {progress}%" onclick={handleSeek}>
             <div class="progress-fill"></div>
             <div class="progress-thumb"></div>
         </div>
         <span class="time">{formatTime(audioStore.duration)}</span>
     </div>
 
+    <!-- Transport Controls -->
     <div class="player-controls">
-        <button onclick={handlePlay}>Play</button>
-        <button onclick={handlePause}>Pause</button>
-        <button onclick={handleStop} style="border-color: var(--color-danger); color: var(--color-danger);">Stop</button>
+        <button
+            class="control-btn"
+            class:active={audioStore.shuffleEnabled}
+            onclick={() => audioStore.toggleShuffle()}
+            title="Shuffle"
+        >🔀</button>
+
+        <button class="control-btn" onclick={() => audioStore.previous()} title="Previous">⏮</button>
+
+        <button class="control-btn play-btn" onclick={handlePlayPause} title={audioStore.playbackState === "Playing" ? "Pause" : "Play"}>
+            {audioStore.playbackState === "Playing" ? "⏸" : "▶"}
+        </button>
+
+        <button class="control-btn" onclick={() => audioStore.next()} title="Next">⏭</button>
+
+        <button
+            class="control-btn"
+            class:active={audioStore.repeatMode !== 'off'}
+            onclick={() => audioStore.cycleRepeat()}
+            title="Repeat: {audioStore.repeatMode}"
+        >{repeatLabel()}</button>
     </div>
 </div>
 
@@ -57,12 +97,31 @@
         --pb-radius: 2px;
     }
 
+    .now-playing-title {
+        font-family: var(--font-display);
+        font-weight: 600;
+        color: #fff;
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 280px;
+        display: block;
+    }
+
+    .player-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        min-width: 200px;
+    }
+
     .progress-section {
         flex: 1;
         display: flex;
         align-items: center;
         gap: 1rem;
-        margin: 0 3rem;
+        margin: 0 2rem;
     }
 
     .time {
@@ -109,5 +168,39 @@
     .progress-track:hover .progress-thumb {
         opacity: 1;
     }
-</style>
 
+    /* ── Transport Controls ── */
+    .player-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .control-btn {
+        background: transparent;
+        border: none;
+        color: var(--color-chalk-muted);
+        font-size: 1.2rem;
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        line-height: 1;
+    }
+
+    .control-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.08);
+        transform: none;
+    }
+
+    .control-btn.active {
+        color: var(--color-cyan);
+    }
+
+    .control-btn.play-btn {
+        font-size: 1.6rem;
+        padding: 0.4rem 0.8rem;
+        color: var(--color-cyan);
+    }
+</style>
