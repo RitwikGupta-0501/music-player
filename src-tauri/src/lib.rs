@@ -52,6 +52,8 @@ pub enum AudioCommand {
     Pause,
     Stop,
     Seek(f64),
+    SetVolume(f32),
+    SetMute(bool),
 }
 
 // 2. Global State
@@ -134,6 +136,8 @@ fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) {
 
         let mut current_track_path = String::new();
         let mut current_duration: f64 = 0.0;
+        let mut current_volume: f32 = 1.0;
+        let mut is_muted: bool = false;
 
         // Helper closure to emit a single structured sync event
         let emit_sync = |handle: &AppHandle, state: &str, sink: &Sink, track: &str, duration: f64| {
@@ -190,6 +194,20 @@ fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) {
                             duration: current_duration,
                             track: current_track_path.clone(),
                         });
+                    }
+                    AudioCommand::SetVolume(vol) => {
+                        current_volume = vol;
+                        if !is_muted {
+                            sink.set_volume(current_volume);
+                        }
+                    }
+                    AudioCommand::SetMute(muted) => {
+                        is_muted = muted;
+                        if is_muted {
+                            sink.set_volume(0.0);
+                        } else {
+                            sink.set_volume(current_volume);
+                        }
                     }
                 }
             }
@@ -513,6 +531,22 @@ async fn factory_reset(app_handle: AppHandle, state: State<'_, AppState>) -> Res
     Ok(())
 }
 
+#[tauri::command]
+async fn set_volume(state: State<'_, AppState>, volume: f32) -> Result<(), String> {
+    if let Ok(tx) = state.tx.lock() {
+        let _ = tx.send(AudioCommand::SetVolume(volume));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_mute(state: State<'_, AppState>, mute: bool) -> Result<(), String> {
+    if let Ok(tx) = state.tx.lock() {
+        let _ = tx.send(AudioCommand::SetMute(mute));
+    }
+    Ok(())
+}
+
 // 5. Async Tauri Commands
 #[tauri::command]
 async fn load_audio(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -630,7 +664,9 @@ pub fn run() {
             clear_local_library,
             get_setting,
             set_setting,
-            factory_reset
+            factory_reset,
+            set_volume,
+            set_mute
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

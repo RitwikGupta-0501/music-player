@@ -1,5 +1,16 @@
 <script lang="ts">
     import { audioStore } from "$lib/stores/audio.svelte";
+    import { 
+        Play, 
+        Pause, 
+        SkipBack, 
+        SkipForward, 
+        Shuffle, 
+        Repeat, 
+        Repeat1, 
+        Volume2, 
+        VolumeX 
+    } from "lucide-svelte";
 
     function handlePlayPause() {
         if (audioStore.playbackState === "Playing") {
@@ -25,22 +36,16 @@
 
     let progress = $derived(audioStore.duration > 0 ? (audioStore.currentTime / audioStore.duration) * 100 : 0);
 
-    // Display-friendly track name (strip path, show just filename)
+    // Display-friendly track name
     let displayTrack = $derived(() => {
         if (!audioStore.currentQueueTrack) return audioStore.currentTrack !== "None" ? audioStore.currentTrack : "Ready to play";
         const t = audioStore.currentQueueTrack;
         return t.artist ? `${t.title} — ${t.artist}` : t.title;
     });
-
-    function repeatLabel(): string {
-        if (audioStore.repeatMode === 'one') return '🔂';
-        if (audioStore.repeatMode === 'all') return '🔁';
-        return '🔁';
-    }
 </script>
 
 <div class="bottom-player">
-    <!-- Track Info -->
+    <!-- Left: Track Info -->
     <div class="player-info">
         <span class="now-playing-title">{displayTrack()}</span>
         {#if audioStore.queue.length > 0}
@@ -48,41 +53,80 @@
         {/if}
     </div>
 
-    <!-- Progress Bar -->
-    <div class="progress-section">
-        <span class="time">{formatTime(audioStore.currentTime)}</span>
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="progress-track" style="--progress: {progress}%" onclick={handleSeek}>
-            <div class="progress-fill"></div>
-            <div class="progress-thumb"></div>
+    <!-- Center: Controls + Progress Bar -->
+    <div class="player-center">
+        <!-- Transport Controls -->
+        <div class="player-controls">
+            <button
+                class="control-btn"
+                class:active={audioStore.shuffleEnabled}
+                onclick={() => audioStore.toggleShuffle()}
+                title="Shuffle"
+            >
+                <Shuffle size={16} />
+            </button>
+
+            <button class="control-btn" onclick={() => audioStore.previous()} title="Previous">
+                <SkipBack size={18} fill="currentColor" />
+            </button>
+
+            <button class="control-btn play-btn" onclick={handlePlayPause} title={audioStore.playbackState === "Playing" ? "Pause" : "Play"}>
+                {#if audioStore.playbackState === "Playing"}
+                    <Pause size={20} fill="currentColor" />
+                {:else}
+                    <Play size={20} fill="currentColor" />
+                {/if}
+            </button>
+
+            <button class="control-btn" onclick={() => audioStore.next()} title="Next">
+                <SkipForward size={18} fill="currentColor" />
+            </button>
+
+            <button
+                class="control-btn"
+                class:active={audioStore.repeatMode !== 'off'}
+                onclick={() => audioStore.cycleRepeat()}
+                title="Repeat: {audioStore.repeatMode}"
+            >
+                {#if audioStore.repeatMode === 'one'}
+                    <Repeat1 size={16} />
+                {:else}
+                    <Repeat size={16} />
+                {/if}
+            </button>
         </div>
-        <span class="time">{formatTime(audioStore.duration)}</span>
+
+        <!-- Progress Section -->
+        <div class="progress-section">
+            <span class="time">{formatTime(audioStore.currentTime)}</span>
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="progress-track" style="--progress: {progress}%" onclick={handleSeek}>
+                <div class="progress-fill"></div>
+                <div class="progress-thumb"></div>
+            </div>
+            <span class="time">{formatTime(audioStore.duration)}</span>
+        </div>
     </div>
 
-    <!-- Transport Controls -->
-    <div class="player-controls">
-        <button
-            class="control-btn"
-            class:active={audioStore.shuffleEnabled}
-            onclick={() => audioStore.toggleShuffle()}
-            title="Shuffle"
-        >🔀</button>
-
-        <button class="control-btn" onclick={() => audioStore.previous()} title="Previous">⏮</button>
-
-        <button class="control-btn play-btn" onclick={handlePlayPause} title={audioStore.playbackState === "Playing" ? "Pause" : "Play"}>
-            {audioStore.playbackState === "Playing" ? "⏸" : "▶"}
+    <!-- Right: Volume controls -->
+    <div class="player-right">
+        <button class="control-btn volume-btn" onclick={() => audioStore.toggleMute()} title={audioStore.isMuted ? "Unmute" : "Mute"}>
+            {#if audioStore.isMuted || audioStore.volume === 0}
+                <VolumeX size={18} />
+            {:else}
+                <Volume2 size={18} />
+            {/if}
         </button>
-
-        <button class="control-btn" onclick={() => audioStore.next()} title="Next">⏭</button>
-
-        <button
-            class="control-btn"
-            class:active={audioStore.repeatMode !== 'off'}
-            onclick={() => audioStore.cycleRepeat()}
-            title="Repeat: {audioStore.repeatMode}"
-        >{repeatLabel()}</button>
+        <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={audioStore.isMuted ? 0 : audioStore.volume}
+            oninput={(e) => audioStore.setVolume(parseFloat(e.currentTarget.value))}
+            class="volume-slider"
+        />
     </div>
 </div>
 
@@ -90,7 +134,7 @@
     /* ── Progress Bar Theme Tokens ── */
     .progress-track {
         --pb-height: 4px;
-        --pb-thumb-size: 12px;
+        --pb-thumb-size: 10px;
         --pb-fill-color: var(--color-cyan);
         --pb-track-color: rgba(255, 255, 255, 0.1);
         --pb-thumb-glow: rgba(102, 252, 241, 0.5);
@@ -113,15 +157,24 @@
         display: flex;
         flex-direction: column;
         gap: 0.25rem;
+        width: 30%;
         min-width: 200px;
     }
 
-    .progress-section {
+    .player-center {
         flex: 1;
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 1rem;
-        margin: 0 2rem;
+        gap: 0.5rem;
+        max-width: 600px;
+    }
+
+    .progress-section {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
     }
 
     .time {
@@ -129,6 +182,7 @@
         font-size: 0.8rem;
         color: var(--color-chalk-muted);
         min-width: 35px;
+        text-align: center;
     }
 
     .progress-track {
@@ -160,7 +214,7 @@
         background: var(--pb-fill-color);
         border-radius: 50%;
         transform: translate(-50%, -50%);
-        box-shadow: 0 0 10px var(--pb-thumb-glow);
+        box-shadow: 0 0 8px var(--pb-thumb-glow);
         opacity: 0;
         transition: opacity 0.2s ease;
     }
@@ -173,25 +227,25 @@
     .player-controls {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 1rem;
     }
 
     .control-btn {
         background: transparent;
         border: none;
         color: var(--color-chalk-muted);
-        font-size: 1.2rem;
-        padding: 0.4rem 0.6rem;
-        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.4rem;
+        border-radius: 50%;
         cursor: pointer;
         transition: all 0.15s ease;
-        line-height: 1;
     }
 
     .control-btn:hover {
         color: #fff;
         background: rgba(255, 255, 255, 0.08);
-        transform: none;
     }
 
     .control-btn.active {
@@ -199,8 +253,56 @@
     }
 
     .control-btn.play-btn {
-        font-size: 1.6rem;
-        padding: 0.4rem 0.8rem;
-        color: var(--color-cyan);
+        background: var(--color-cyan);
+        color: var(--color-bg);
+        padding: 0.6rem;
+    }
+
+    .control-btn.play-btn:hover {
+        background: #fff;
+        color: var(--color-bg);
+        transform: scale(1.05);
+    }
+
+    /* ── Player Right (Volume) ── */
+    .player-right {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        justify-content: flex-end;
+        width: 30%;
+        min-width: 150px;
+    }
+
+    .volume-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100px;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.15);
+        outline: none;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    .volume-slider:hover {
+        background: rgba(255, 255, 255, 0.25);
+    }
+
+    .volume-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--color-cyan);
+        box-shadow: 0 0 8px rgba(102, 252, 241, 0.5);
+        cursor: pointer;
+        transition: transform 0.1s ease;
+    }
+
+    .volume-slider::-webkit-slider-thumb:hover {
+        transform: scale(1.2);
     }
 </style>

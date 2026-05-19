@@ -30,6 +30,10 @@ export class AudioStore {
     shuffleEnabled = $state(false);
     repeatMode = $state<'off' | 'all' | 'one'>('off');
 
+    // ── Volume & Mute ──
+    volume = $state(1.0);
+    isMuted = $state(false);
+
     // Internal: shuffle order maps visual index → actual queue index
     private _shuffleOrder: number[] = [];
     // Internal: history of played indices for "previous" while shuffled
@@ -76,6 +80,22 @@ export class AudioStore {
         });
 
         this.startClock();
+
+        // Load volume and mute settings from DB
+        try {
+            const persistedVolume = await invoke<string | null>("get_setting", { key: "volume" });
+            if (persistedVolume !== null) {
+                this.volume = parseFloat(persistedVolume);
+                await invoke("set_volume", { volume: this.volume });
+            }
+            const persistedMute = await invoke<string | null>("get_setting", { key: "mute" });
+            if (persistedMute !== null) {
+                this.isMuted = persistedMute === "true";
+                await invoke("set_mute", { mute: this.isMuted });
+            }
+        } catch (e) {
+            console.error("Failed to load settings:", e);
+        }
     }
 
     destroy() {
@@ -307,6 +327,30 @@ export class AudioStore {
         if (this.repeatMode === 'off') this.repeatMode = 'all';
         else if (this.repeatMode === 'all') this.repeatMode = 'one';
         else this.repeatMode = 'off';
+    }
+
+    // ══════════════════════════════════════════
+    //  VOLUME CONTROL
+    // ══════════════════════════════════════════
+
+    async setVolume(volume: number) {
+        this.volume = Math.max(0, Math.min(volume, 1));
+        await invoke("set_volume", { volume: this.volume });
+        try {
+            await invoke("set_setting", { key: "volume", value: this.volume.toString() });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async toggleMute() {
+        this.isMuted = !this.isMuted;
+        await invoke("set_mute", { mute: this.isMuted });
+        try {
+            await invoke("set_setting", { key: "mute", value: this.isMuted.toString() });
+        } catch (e) {
+            console.error(e);
+        }
     }
 }
 
