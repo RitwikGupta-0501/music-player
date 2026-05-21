@@ -1,13 +1,31 @@
 <script lang="ts">
     import { libraryStore, type Playlist } from "$lib/stores/library.svelte";
+    import { onMount } from "svelte";
+
+    let { onSelectPlaylist } = $props<{ onSelectPlaylist: (p: Playlist) => void }>();
 
     let newPlaylistName = $state("");
+    let mosaics = $state<Record<number, string[]>>({});
 
     async function handleCreate() {
         if (!newPlaylistName.trim()) return;
         await libraryStore.createPlaylist(newPlaylistName);
         newPlaylistName = "";
+        await loadMosaics();
     }
+
+    async function loadMosaics() {
+        for (const playlist of libraryStore.playlists) {
+            mosaics[playlist.id] = await libraryStore.getPlaylistArtworkMosaic(playlist.id);
+        }
+    }
+
+    // Reactively load mosaics when playlists change
+    $effect(() => {
+        if (libraryStore.playlists) {
+            loadMosaics();
+        }
+    });
 </script>
 
 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem;">
@@ -32,9 +50,24 @@
 
 <div class="playlist-grid">
     {#each libraryStore.playlists as playlist}
-        <div class="playlist-card glass-panel">
-            <div class="icon">📝</div>
-            <h3>{playlist.name}</h3>
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="playlist-card glass-panel" onclick={() => onSelectPlaylist(playlist)}>
+            <div class="art">
+                {#if mosaics[playlist.id] && mosaics[playlist.id].length >= 4}
+                    <div class="mosaic">
+                        <img src={mosaics[playlist.id][0]} alt="Cover" />
+                        <img src={mosaics[playlist.id][1]} alt="Cover" />
+                        <img src={mosaics[playlist.id][2]} alt="Cover" />
+                        <img src={mosaics[playlist.id][3]} alt="Cover" />
+                    </div>
+                {:else if mosaics[playlist.id] && mosaics[playlist.id].length > 0}
+                    <img src={mosaics[playlist.id][0]} alt="Cover" style="width: 100%; height: 100%; object-fit: cover;" />
+                {:else}
+                    <div class="icon">📝</div>
+                {/if}
+            </div>
+            <h3 style="margin-top: 0.5rem; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{playlist.name}</h3>
         </div>
     {/each}
 </div>
@@ -46,18 +79,43 @@
         gap: 1.5rem;
     }
     .playlist-card {
-        padding: 2rem;
+        padding: 1rem;
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 1.5rem;
+        gap: 0.5rem;
         cursor: pointer;
         transition: transform 0.2s, background 0.2s;
+        border-radius: 12px;
     }
     .playlist-card:hover {
-        transform: translateY(-2px);
+        transform: translateY(-4px);
         background: rgba(31, 40, 51, 0.9);
     }
+    .art {
+        width: 100%;
+        aspect-ratio: 1;
+        background: rgba(0,0,0,0.2);
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .mosaic {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+        width: 100%;
+        height: 100%;
+    }
+    .mosaic img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
     .icon {
-        font-size: 2.5rem;
+        font-size: 3rem;
+        opacity: 0.5;
     }
 </style>

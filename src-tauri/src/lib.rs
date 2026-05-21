@@ -67,17 +67,11 @@ fn init_db<P: AsRef<std::path::Path>>(db_path: P) -> SqlResult<Connection> {
     let conn = Connection::open(db_path)?;
     conn.execute("PRAGMA foreign_keys = ON", [])?;
 
-    // Drop existing tables to ensure a clean slate as requested
-    conn.execute_batch(
-        "DROP TABLE IF EXISTS playlist_tracks;
-         DROP TABLE IF EXISTS playlists;
-         DROP TABLE IF EXISTS tracks;
-         DROP TABLE IF EXISTS albums;
-         DROP TABLE IF EXISTS settings;"
-    )?;
+    // Removed DB drop logic to persist user data
+    // Tables will be created below if they don't exist
 
     conn.execute(
-        "CREATE TABLE albums (
+        "CREATE TABLE IF NOT EXISTS albums (
             id INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
             artist TEXT,
@@ -87,7 +81,7 @@ fn init_db<P: AsRef<std::path::Path>>(db_path: P) -> SqlResult<Connection> {
         [],
     )?;
     conn.execute(
-        "CREATE TABLE tracks (
+        "CREATE TABLE IF NOT EXISTS tracks (
             id INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
             artist TEXT,
@@ -99,7 +93,7 @@ fn init_db<P: AsRef<std::path::Path>>(db_path: P) -> SqlResult<Connection> {
         [],
     )?;
     conn.execute(
-        "CREATE TABLE playlists (
+        "CREATE TABLE IF NOT EXISTS playlists (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -107,7 +101,7 @@ fn init_db<P: AsRef<std::path::Path>>(db_path: P) -> SqlResult<Connection> {
         [],
     )?;
     conn.execute(
-        "CREATE TABLE playlist_tracks (
+        "CREATE TABLE IF NOT EXISTS playlist_tracks (
             id INTEGER PRIMARY KEY,
             playlist_id INTEGER,
             track_id INTEGER,
@@ -118,7 +112,7 @@ fn init_db<P: AsRef<std::path::Path>>(db_path: P) -> SqlResult<Connection> {
         [],
     )?;
     conn.execute(
-        "CREATE TABLE settings (
+        "CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         )",
@@ -459,6 +453,87 @@ async fn get_playlist_tracks(state: State<'_, AppState>, playlist_id: i64) -> Re
 }
 
 #[tauri::command]
+async fn remove_from_playlist(state: State<'_, AppState>, playlist_id: i64, track_id: i64) -> Result<(), String> {
+    if let Ok(mut conn) = state.db_conn.lock() {
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        
+        let position: Option<i64> = tx.query_row(
+            "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+            [&playlist_id, &track_id],
+            |row| row.get(0)
+        ).ok();
+
+        if let Some(pos) = position {
+            tx.execute(
+                "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+                [&playlist_id, &track_id]
+            ).map_err(|e| e.to_string())?;
+
+            tx.execute(
+                "UPDATE playlist_tracks SET position = position - 1 WHERE playlist_id = ?1 AND position > ?2",
+                [&playlist_id, &pos]
+            ).map_err(|e| e.to_string())?;
+        }
+        
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_playlist(state: State<'_, AppState>, playlist_id: i64) -> Result<(), String> {
+    if let Ok(conn) = state.db_conn.lock() {
+        conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?1", [&playlist_id]).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM playlists WHERE id = ?1", [&playlist_id]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn rename_playlist(state: State<'_, AppState>, playlist_id: i64, new_name: String) -> Result<(), String> {
+    if let Ok(conn) = state.db_conn.lock() {
+        conn.execute("UPDATE playlists SET name = ?1 WHERE id = ?2", (&new_name, &playlist_id)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn reorder_playlist_track(state: State<'_, AppState>, playlist_id: i64, from_pos: i64, to_pos: i64) -> Result<(), String> {
+    if from_pos == to_pos {
+        return Ok(());
+    }
+
+    if let Ok(mut conn) = state.db_conn.lock() {
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        tx.execute(
+            "UPDATE playlist_tracks SET position = -1 WHERE playlist_id = ?1 AND position = ?2",
+            [&playlist_id, &from_pos]
+        ).map_err(|e| e.to_string())?;
+
+        if from_pos < to_pos {
+            tx.execute(
+                "UPDATE playlist_tracks SET position = position - 1 WHERE playlist_id = ?1 AND position > ?2 AND position <= ?3",
+                [&playlist_id, &from_pos, &to_pos]
+            ).map_err(|e| e.to_string())?;
+        } else {
+            tx.execute(
+                "UPDATE playlist_tracks SET position = position + 1 WHERE playlist_id = ?1 AND position >= ?2 AND position < ?3",
+                [&playlist_id, &to_pos, &from_pos]
+            ).map_err(|e| e.to_string())?;
+        }
+
+        tx.execute(
+            "UPDATE playlist_tracks SET position = ?1 WHERE playlist_id = ?2 AND position = -1",
+            [&to_pos, &playlist_id]
+        ).map_err(|e| e.to_string())?;
+
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn extract_and_cache_artwork(app_handle: AppHandle, track_id: i64, file_path: String) -> Result<Option<String>, String> {
     let app_data_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
     let artwork_dir = app_data_dir.join("artwork");
@@ -660,6 +735,10 @@ pub fn run() {
             create_playlist,
             add_to_playlist,
             get_playlist_tracks,
+            remove_from_playlist,
+            delete_playlist,
+            rename_playlist,
+            reorder_playlist_track,
             extract_and_cache_artwork,
             clear_local_library,
             get_setting,

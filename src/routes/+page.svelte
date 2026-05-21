@@ -10,9 +10,12 @@
     import AlbumGrid from "$lib/components/AlbumGrid.svelte";
     import AlbumDetail from "$lib/components/AlbumDetail.svelte";
     import PlaylistView from "$lib/components/PlaylistView.svelte";
+    import PlaylistDetail from "$lib/components/PlaylistDetail.svelte";
+    import type { Playlist } from "$lib/stores/library.svelte";
 
     let activeView = $state("albums");
     let selectedAlbum = $state<Album | null>(null);
+    let selectedPlaylist = $state<Playlist | null>(null);
 
     onMount(async () => {
         await audioStore.init();
@@ -32,7 +35,15 @@
                 <AlbumGrid onSelectAlbum={(a) => selectedAlbum = a} />
             {/if}
         {:else if activeView === "playlists"}
-            <PlaylistView />
+            {#if selectedPlaylist}
+                <PlaylistDetail 
+                    playlist={selectedPlaylist} 
+                    onBack={() => selectedPlaylist = null} 
+                    onDeleted={() => selectedPlaylist = null} 
+                />
+            {:else}
+                <PlaylistView onSelectPlaylist={(p) => selectedPlaylist = p} />
+            {/if}
         {:else if activeView === "providers"}
             <div style="padding-top: 5rem; text-align: center;">
                 <h1 class="text-muted">Network Providers</h1>

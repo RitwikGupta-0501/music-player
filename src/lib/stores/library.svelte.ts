@@ -73,6 +73,37 @@ export class LibraryStore {
         await invoke("add_to_playlist", { playlistId, trackId });
     }
 
+    async removeFromPlaylist(playlistId: number, trackId: number) {
+        await invoke("remove_from_playlist", { playlistId, trackId });
+    }
+
+    async deletePlaylist(playlistId: number) {
+        await invoke("delete_playlist", { playlistId });
+        await this.fetchPlaylists();
+    }
+
+    async renamePlaylist(playlistId: number, newName: string) {
+        await invoke("rename_playlist", { playlistId, newName });
+        await this.fetchPlaylists();
+    }
+
+    async reorderPlaylistTrack(playlistId: number, fromPos: number, toPos: number) {
+        await invoke("reorder_playlist_track", { playlistId, fromPos, toPos });
+    }
+
+    async getPlaylistArtworkMosaic(playlistId: number): Promise<string[]> {
+        const tracks = await this.getPlaylistTracks(playlistId);
+        const artworkUrls: string[] = [];
+        for (const track of tracks) {
+            if (artworkUrls.length >= 4) break;
+            const url = await this.getArtworkUrl(track.id, track.file_path);
+            if (url && !artworkUrls.includes(url)) {
+                artworkUrls.push(url);
+            }
+        }
+        return artworkUrls;
+    }
+
     async getArtworkUrl(trackId: number, filePath: string): Promise<string | null> {
         try {
             const cachedPath = await invoke<string | null>("extract_and_cache_artwork", { trackId, filePath });
