@@ -12,11 +12,13 @@
     let isCreatingPlaylistForTrack = $state<number | null>(null);
     let newPlaylistName = $state("");
 
-    onMount(async () => {
-        tracks = await libraryStore.getAlbumTracks(album.id);
-        if (tracks.length > 0) {
-            artUrl = await libraryStore.getArtworkUrl(tracks[0].id, tracks[0].file_path);
-        }
+    onMount(() => {
+        (async () => {
+            tracks = await libraryStore.getAlbumTracks(album.id);
+            if (tracks.length > 0) {
+                artUrl = await libraryStore.getArtworkUrl(tracks[0].id, tracks[0].file_path);
+            }
+        })();
         
         const closeDropdowns = () => {
             activeDropdown = null;
@@ -91,7 +93,7 @@
     {#each tracks as track, i}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="track-card" onclick={() => playTrack(i)} style="position: relative;">
+        <div class="track-card" class:now-playing={audioStore.currentTrack === track.file_path} onclick={() => playTrack(i)} style="position: relative;">
             <div style="display: flex; gap: 1rem; align-items: center;">
                 <span class="text-muted" style="width: 20px; text-align: right;">{track.track_number || i + 1}</span>
                 <strong>{track.title}</strong>

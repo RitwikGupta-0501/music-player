@@ -48,29 +48,47 @@
     </div>
 </div>
 
-<div class="playlist-grid">
-    {#each libraryStore.playlists as playlist}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="playlist-card glass-panel" onclick={() => onSelectPlaylist(playlist)}>
-            <div class="art">
-                {#if mosaics[playlist.id] && mosaics[playlist.id].length >= 4}
-                    <div class="mosaic">
-                        <img src={mosaics[playlist.id][0]} alt="Cover" />
-                        <img src={mosaics[playlist.id][1]} alt="Cover" />
-                        <img src={mosaics[playlist.id][2]} alt="Cover" />
-                        <img src={mosaics[playlist.id][3]} alt="Cover" />
-                    </div>
-                {:else if mosaics[playlist.id] && mosaics[playlist.id].length > 0}
-                    <img src={mosaics[playlist.id][0]} alt="Cover" style="width: 100%; height: 100%; object-fit: cover;" />
-                {:else}
-                    <div class="icon">📝</div>
-                {/if}
-            </div>
-            <h3 style="margin-top: 0.5rem; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{playlist.name}</h3>
+{#if libraryStore.playlists.length === 0}
+    <div class="empty-state">
+        <p class="text-muted" style="font-size: 1.1rem; margin-bottom: 1.5rem;">No playlists yet. Create your first one!</p>
+        <div style="display: flex; gap: 0.5rem;">
+            <input
+                type="text"
+                bind:value={newPlaylistName}
+                placeholder="My Playlist"
+                spellcheck="false"
+                style="width: 250px;"
+            />
+            <button class="primary" onclick={handleCreate} disabled={!newPlaylistName.trim()}>
+                Create
+            </button>
         </div>
-    {/each}
-</div>
+    </div>
+{:else}
+    <div class="playlist-grid">
+        {#each libraryStore.playlists as playlist}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="playlist-card glass-panel" onclick={() => onSelectPlaylist(playlist)}>
+                <div class="art">
+                    {#if mosaics[playlist.id] && mosaics[playlist.id].length >= 4}
+                        <div class="mosaic">
+                            <img src={mosaics[playlist.id][0]} alt="Cover" />
+                            <img src={mosaics[playlist.id][1]} alt="Cover" />
+                            <img src={mosaics[playlist.id][2]} alt="Cover" />
+                            <img src={mosaics[playlist.id][3]} alt="Cover" />
+                        </div>
+                    {:else if mosaics[playlist.id] && mosaics[playlist.id].length > 0}
+                        <img src={mosaics[playlist.id][0]} alt="Cover" style="width: 100%; height: 100%; object-fit: cover;" />
+                    {:else}
+                        <div class="icon">📝</div>
+                    {/if}
+                </div>
+                <h3 style="margin-top: 0.5rem; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{playlist.name}</h3>
+            </div>
+        {/each}
+    </div>
+{/if}
 
 <style>
     .playlist-grid {
@@ -117,5 +135,12 @@
     .icon {
         font-size: 3rem;
         opacity: 0.5;
+    }
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 50vh;
     }
 </style>

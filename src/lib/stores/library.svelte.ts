@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { toastStore } from './toast.svelte';
 
 export interface Album {
     id: number;
@@ -26,6 +27,7 @@ export class LibraryStore {
     albums = $state<Album[]>([]);
     playlists = $state<Playlist[]>([]);
     isScanning = $state(false);
+    lastScanResult = $state<number | null>(null);
 
     async fetchAlbums() {
         try {
@@ -46,11 +48,15 @@ export class LibraryStore {
     async scanDirectory(path: string) {
         if (!path) return;
         this.isScanning = true;
+        this.lastScanResult = null;
         try {
-            await invoke("scan_local_directory", { path });
+            const added = await invoke<number>("scan_local_directory", { path });
+            this.lastScanResult = added;
             await this.fetchAlbums();
+            toastStore.success(`Scan complete: ${added} new track${added !== 1 ? 's' : ''} added.`);
         } catch (e) {
             console.error("Scan error:", e);
+            toastStore.error(`Scan failed: ${e}`);
         } finally {
             this.isScanning = false;
         }

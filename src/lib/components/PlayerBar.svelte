@@ -9,8 +9,11 @@
         Repeat, 
         Repeat1, 
         Volume2, 
-        VolumeX 
+        VolumeX,
+        ListOrdered
     } from "lucide-svelte";
+
+    let { queueOpen = $bindable(false) } = $props<{ queueOpen?: boolean }>();
 
     function handlePlayPause() {
         if (audioStore.playbackState === "Playing") {
@@ -109,7 +112,7 @@
         </div>
     </div>
 
-    <!-- Right: Volume controls -->
+    <!-- Right: Volume + Queue toggle -->
     <div class="player-right">
         <button class="control-btn volume-btn" onclick={() => audioStore.toggleMute()} title={audioStore.isMuted ? "Unmute" : "Mute"}>
             {#if audioStore.isMuted || audioStore.volume === 0}
@@ -127,6 +130,14 @@
             oninput={(e) => audioStore.setVolume(parseFloat(e.currentTarget.value))}
             class="volume-slider"
         />
+        <button
+            class="control-btn"
+            class:active={queueOpen}
+            onclick={() => queueOpen = !queueOpen}
+            title="Queue"
+        >
+            <ListOrdered size={18} />
+        </button>
     </div>
 </div>
 

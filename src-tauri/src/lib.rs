@@ -675,6 +675,7 @@ pub fn run() {
     let (tx, rx) = mpsc::channel();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let handle = app.handle().clone();
             

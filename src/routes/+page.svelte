@@ -6,6 +6,9 @@
     import Sidebar from "$lib/components/Sidebar.svelte";
     import PlayerBar from "$lib/components/PlayerBar.svelte";
     import SettingsModal from "$lib/components/SettingsModal.svelte";
+    import QueueSidebar from "$lib/components/QueueSidebar.svelte";
+    import KeyboardHandler from "$lib/components/KeyboardHandler.svelte";
+    import ToastContainer from "$lib/components/ToastContainer.svelte";
     
     import AlbumGrid from "$lib/components/AlbumGrid.svelte";
     import AlbumDetail from "$lib/components/AlbumDetail.svelte";
@@ -16,13 +19,34 @@
     let activeView = $state("albums");
     let selectedAlbum = $state<Album | null>(null);
     let selectedPlaylist = $state<Playlist | null>(null);
+    let queueOpen = $state(false);
 
-    onMount(async () => {
-        await audioStore.init();
-        await libraryStore.fetchAlbums();
-        await libraryStore.fetchPlaylists();
+    onMount(() => {
+        // Fire-and-forget async init
+        (async () => {
+            await audioStore.init();
+            await libraryStore.fetchAlbums();
+            await libraryStore.fetchPlaylists();
+        })();
+
+        // Listen for escape events from KeyboardHandler
+        const handleEscape = () => {
+            if (activeView === "settings") {
+                activeView = "albums";
+            } else if (selectedAlbum) {
+                selectedAlbum = null;
+            } else if (selectedPlaylist) {
+                selectedPlaylist = null;
+            } else if (queueOpen) {
+                queueOpen = false;
+            }
+        };
+        document.addEventListener('echo:escape', handleEscape);
+        return () => document.removeEventListener('echo:escape', handleEscape);
     });
 </script>
+
+<KeyboardHandler />
 
 <div class="app-container">
     <Sidebar bind:activeView />
@@ -52,9 +76,12 @@
         {/if}
     </main>
 
-    <PlayerBar />
+    <PlayerBar bind:queueOpen />
 
     {#if activeView === "settings"}
         <SettingsModal onClose={() => activeView = "albums"} />
     {/if}
 </div>
+
+<QueueSidebar bind:open={queueOpen} />
+<ToastContainer />
