@@ -1,24 +1,20 @@
 <script lang="ts">
     import { libraryStore, type Album } from "$lib/stores/library.svelte";
-    import { onMount } from "svelte";
 
     let { album, onclick } = $props<{ album: Album, onclick: () => void }>();
     
     let artUrl = $state<string | null>(null);
 
-    onMount(async () => {
-        // If the album already has an extracted path, we could use it, 
-        // but for safety, we'll try to find a track in this album and get its artwork.
-        // Wait, the new schema has cover_art_path in the Album? No, extract_and_cache_artwork takes a track_id and file_path.
-        // So we need to fetch one track for this album to get the artwork.
-        try {
-            const tracks = await libraryStore.getAlbumTracks(album.id);
+    $effect(() => {
+        libraryStore.getAlbumTracks(album.id).then(tracks => {
             if (tracks && tracks.length > 0) {
-                artUrl = await libraryStore.getArtworkUrl(tracks[0].id, tracks[0].file_path);
+                libraryStore.getArtworkUrl(tracks[0].id, tracks[0].file_path).then(url => {
+                    artUrl = url;
+                });
             }
-        } catch (e) {
+        }).catch(e => {
             console.error("Failed to load artwork for album", album.id);
-        }
+        });
     });
 </script>
 

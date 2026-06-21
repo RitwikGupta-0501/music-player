@@ -47,14 +47,14 @@ export class AudioStore {
     private _autoAdvancing = false;
     
     private unlistenSync: UnlistenFn | null = null;
+    private _volumeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
     // ── Derived ──
-    get currentQueueTrack(): QueueTrack | null {
-        if (this.queueIndex >= 0 && this.queueIndex < this.queue.length) {
-            return this.queue[this.queueIndex];
-        }
-        return null;
-    }
+    currentQueueTrack = $derived(
+        this.queueIndex >= 0 && this.queueIndex < this.queue.length
+            ? this.queue[this.queueIndex]
+            : null
+    );
 
     // ══════════════════════════════════════════
     //  LIFECYCLE
@@ -176,6 +176,14 @@ export class AudioStore {
     // ══════════════════════════════════════════
     //  QUEUE MANAGEMENT
     // ══════════════════════════════════════════
+
+    async jumpToIndex(index: number) {
+        if (index < 0 || index >= this.queue.length) return;
+        this.queueIndex = index;
+        this._shuffleHistory.push(index);
+        this._autoAdvancing = false;
+        await this.load(this.queue[index].file_path);
+    }
 
     /** Replace the queue and start playing at startIndex */
     async setQueue(tracks: QueueTrack[], startIndex: number = 0) {
@@ -333,14 +341,13 @@ export class AudioStore {
     //  VOLUME CONTROL
     // ══════════════════════════════════════════
 
-    async setVolume(volume: number) {
+    setVolume(volume: number) {
         this.volume = Math.max(0, Math.min(volume, 1));
-        await invoke("set_volume", { volume: this.volume });
-        try {
-            await invoke("set_setting", { key: "volume", value: this.volume.toString() });
-        } catch (e) {
-            console.error(e);
-        }
+        invoke("set_volume", { volume: this.volume }); // fire-and-forget, no await
+        if (this._volumeSaveTimer) clearTimeout(this._volumeSaveTimer);
+        this._volumeSaveTimer = setTimeout(() => {
+            invoke("set_setting", { key: "volume", value: this.volume.toString() }).catch(console.error);
+        }, 500);
     }
 
     async toggleMute() {

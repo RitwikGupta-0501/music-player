@@ -1,7 +1,6 @@
 <script lang="ts">
     import { libraryStore, type Album, type LocalTrack } from "$lib/stores/library.svelte";
     import { audioStore } from "$lib/stores/audio.svelte";
-    import { onMount } from "svelte";
 
     let { album, onBack } = $props<{ album: Album, onBack: () => void }>();
     
@@ -12,13 +11,13 @@
     let isCreatingPlaylistForTrack = $state<number | null>(null);
     let newPlaylistName = $state("");
 
-    onMount(() => {
-        (async () => {
-            tracks = await libraryStore.getAlbumTracks(album.id);
-            if (tracks.length > 0) {
-                artUrl = await libraryStore.getArtworkUrl(tracks[0].id, tracks[0].file_path);
+    $effect(() => {
+        libraryStore.getAlbumTracks(album.id).then(t => {
+            tracks = t;
+            if (t.length > 0) {
+                libraryStore.getArtworkUrl(t[0].id, t[0].file_path).then(url => artUrl = url);
             }
-        })();
+        });
         
         const closeDropdowns = () => {
             activeDropdown = null;

@@ -40,7 +40,7 @@
     let progress = $derived(audioStore.duration > 0 ? (audioStore.currentTime / audioStore.duration) * 100 : 0);
 
     // Display-friendly track name
-    let displayTrack = $derived(() => {
+    let displayTrack = $derived.by(() => {
         if (!audioStore.currentQueueTrack) return audioStore.currentTrack !== "None" ? audioStore.currentTrack : "Ready to play";
         const t = audioStore.currentQueueTrack;
         return t.artist ? `${t.title} — ${t.artist}` : t.title;
@@ -50,7 +50,7 @@
 <div class="bottom-player">
     <!-- Left: Track Info -->
     <div class="player-info">
-        <span class="now-playing-title">{displayTrack()}</span>
+        <span class="now-playing-title">{displayTrack}</span>
         {#if audioStore.queue.length > 0}
             <span class="text-muted">Track {audioStore.queueIndex + 1} of {audioStore.queue.length}</span>
         {/if}

@@ -1,7 +1,6 @@
 <script lang="ts">
     import { libraryStore, type Playlist, type LocalTrack } from "$lib/stores/library.svelte";
     import { audioStore } from "$lib/stores/audio.svelte";
-    import { onMount } from "svelte";
 
     let { playlist, onBack, onDeleted } = $props<{ playlist: Playlist, onBack: () => void, onDeleted: () => void }>();
     
@@ -16,7 +15,7 @@
         artUrls = await libraryStore.getPlaylistArtworkMosaic(playlist.id);
     }
 
-    onMount(() => {
+    $effect(() => {
         loadData();
     });
 
@@ -63,7 +62,6 @@
     async function saveName() {
         if (editName.trim() && editName !== playlist.name) {
             await libraryStore.renamePlaylist(playlist.id, editName);
-            playlist.name = editName; // Update local prop for immediate reflection
         }
         isEditingName = false;
     }

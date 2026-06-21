@@ -1,6 +1,5 @@
 <script lang="ts">
     import { libraryStore, type Playlist } from "$lib/stores/library.svelte";
-    import { onMount } from "svelte";
 
     let { onSelectPlaylist } = $props<{ onSelectPlaylist: (p: Playlist) => void }>();
 
@@ -15,9 +14,10 @@
     }
 
     async function loadMosaics() {
-        for (const playlist of libraryStore.playlists) {
-            mosaics[playlist.id] = await libraryStore.getPlaylistArtworkMosaic(playlist.id);
-        }
+        const entries = await Promise.all(
+            libraryStore.playlists.map(async p => [p.id, await libraryStore.getPlaylistArtworkMosaic(p.id)] as const)
+        );
+        mosaics = Object.fromEntries(entries);
     }
 
     // Reactively load mosaics when playlists change

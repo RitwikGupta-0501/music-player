@@ -6,8 +6,7 @@
     let { open = $bindable(false) } = $props<{ open?: boolean }>();
 
     function jumpToTrack(index: number) {
-        audioStore.queueIndex = index;
-        audioStore.load(audioStore.queue[index].file_path);
+        audioStore.jumpToIndex(index);
     }
 
     function isCurrentTrack(index: number): boolean {

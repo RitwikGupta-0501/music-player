@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { audioStore } from "$lib/stores/audio.svelte";
     import { libraryStore, type Album } from "$lib/stores/library.svelte";
     
@@ -21,7 +20,7 @@
     let selectedPlaylist = $state<Playlist | null>(null);
     let queueOpen = $state(false);
 
-    onMount(() => {
+    $effect(() => {
         // Fire-and-forget async init
         (async () => {
             await audioStore.init();
