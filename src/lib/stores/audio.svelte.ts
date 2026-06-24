@@ -9,6 +9,7 @@ interface PlayerSyncPayload {
 }
 
 export interface QueueTrack {
+    instanceId: string;
     id: number;
     title: string;
     artist: string | null;
@@ -24,7 +25,7 @@ export class AudioStore {
 
     // ── Queue State ──
     queue = $state<QueueTrack[]>([]);
-    queueIndex = $state(-1);
+    currentQueueId = $state<string | null>(null);
 
     // ── Shuffle & Repeat ──
     shuffleEnabled = $state(false);
@@ -34,10 +35,10 @@ export class AudioStore {
     volume = $state(1.0);
     isMuted = $state(false);
 
-    // Internal: shuffle order maps visual index → actual queue index
-    private _shuffleOrder: number[] = [];
-    // Internal: history of played indices for "previous" while shuffled
-    private _shuffleHistory: number[] = [];
+    // Internal: shuffle order stores UUIDs for randomized upcoming tracks
+    private _shuffleOrder: string[] = [];
+    // Internal: history of played UUIDs for "previous" while shuffled
+    private _shuffleHistory: string[] = [];
 
     // ── Interpolation internals ──
     private _syncPosition = 0;
@@ -52,8 +53,8 @@ export class AudioStore {
 
     // ── Derived ──
     currentQueueTrack = $derived(
-        this.queueIndex >= 0 && this.queueIndex < this.queue.length
-            ? this.queue[this.queueIndex]
+        this.currentQueueId
+            ? this.queue.find(t => t.instanceId === this.currentQueueId) || null
             : null
     );
 
@@ -150,14 +151,16 @@ export class AudioStore {
             if (e === "FILE_NOT_FOUND") {
                 // Prune the dead track from the DB (fire and forget).
                 invoke("remove_track_by_path", { path }).catch(() => {});
-                // Remove from the in-memory queue. Since queueIndex was already
-                // set to point at this track before load() was called, removing it
-                // shifts the successor into queueIndex — try loading that next.
-                this.queue = this.queue.filter(t => t.file_path !== path);
-                if (this.queueIndex < this.queue.length) {
-                    await this.load(this.queue[this.queueIndex].file_path);
+                
+                const failedIndex = this.queue.findIndex(t => t.instanceId === this.currentQueueId);
+                this.queue = this.queue.filter(t => t.instanceId !== this.currentQueueId);
+                
+                if (this.queue.length > 0 && failedIndex >= 0) {
+                    const nextIndex = failedIndex < this.queue.length ? failedIndex : 0;
+                    this.currentQueueId = this.queue[nextIndex].instanceId;
+                    await this.load(this.queue[nextIndex].file_path);
                 } else {
-                    this.queueIndex = -1;
+                    this.currentQueueId = null;
                     await this.stop();
                 }
             }
@@ -173,7 +176,7 @@ export class AudioStore {
     }
 
     async stop() {
-        this.queueIndex = -1; // Reset queue visual state so PlayerBar goes Idle
+        this.currentQueueId = null; // Reset queue visual state so PlayerBar goes Idle
         await invoke("stop_audio");
     }
 
@@ -197,46 +200,67 @@ export class AudioStore {
     //  QUEUE MANAGEMENT
     // ══════════════════════════════════════════
 
-    async jumpToIndex(index: number) {
-        if (index < 0 || index >= this.queue.length) return;
-        this.queueIndex = index;
-        this._shuffleHistory.push(index);
+    async jumpToTrack(instanceId: string) {
+        const index = this.queue.findIndex(t => t.instanceId === instanceId);
+        if (index === -1) return;
+        this.currentQueueId = instanceId;
+        this._shuffleHistory.push(instanceId);
         this._autoAdvancing = false;
         await this.load(this.queue[index].file_path);
     }
 
     /** Replace the queue and start playing at startIndex */
-    async setQueue(tracks: QueueTrack[], startIndex: number = 0) {
-        this.queue = tracks;
-        this.queueIndex = startIndex;
-        this._shuffleHistory = [startIndex];
+    async setQueue(tracks: Omit<QueueTrack, 'instanceId'>[], startIndex: number = 0) {
+        this.queue = tracks.map(t => ({ ...t, instanceId: crypto.randomUUID() }));
+        this.currentQueueId = this.queue[startIndex]?.instanceId || null;
+        this._shuffleHistory = this.currentQueueId ? [this.currentQueueId] : [];
         
         // If shuffle is on, regenerate the order
         if (this.shuffleEnabled) {
             this.generateShuffleOrder();
         }
 
-        if (tracks.length > 0 && startIndex < tracks.length) {
-            await this.load(tracks[startIndex].file_path);
+        if (this.queue.length > 0 && startIndex < this.queue.length) {
+            await this.load(this.queue[startIndex].file_path);
         }
     }
 
     /** Append a track to the end of the queue */
-    addToQueue(track: QueueTrack) {
-        this.queue = [...this.queue, track];
+    addToQueue(track: Omit<QueueTrack, 'instanceId'>) {
+        const trackWithId = { ...track, instanceId: crypto.randomUUID() };
+        this.queue = [...this.queue, trackWithId];
         // If shuffle is on, add the new index to the shuffle order
         if (this.shuffleEnabled) {
-            this._shuffleOrder.push(this.queue.length - 1);
+            this._shuffleOrder.push(trackWithId.instanceId);
         }
     }
 
     /** Clear the queue and stop */
     async clearQueue() {
         this.queue = [];
-        this.queueIndex = -1;
+        this.currentQueueId = null;
         this._shuffleOrder = [];
         this._shuffleHistory = [];
         await this.stop();
+    }
+
+    /** Reorder the queue via drag-and-drop */
+    async reorderQueue(fromIndex: number, toIndex: number) {
+        try {
+            await invoke<void>("validate_queue_reorder", {
+                from_index: fromIndex,
+                to_index: toIndex,
+                queue_length: this.queue.length,
+            });
+
+            const newQueue = [...this.queue];
+            const [movedTrack] = newQueue.splice(fromIndex, 1);
+            newQueue.splice(toIndex, 0, movedTrack);
+            this.queue = newQueue;
+        } catch (e) {
+            console.error("Queue reorder failed:", e);
+            throw e;
+        }
     }
 
     // ══════════════════════════════════════════
@@ -256,27 +280,30 @@ export class AudioStore {
         }
         this._autoAdvancing = false;
 
-        let nextIndex: number;
+        let nextId: string | null = null;
+        let nextIndex = -1;
 
         if (this.shuffleEnabled) {
             // Find current position in shuffle order and advance
-            const shufflePos = this._shuffleOrder.indexOf(this.queueIndex);
+            const shufflePos = this._shuffleOrder.indexOf(this.currentQueueId!);
             const nextShufflePos = shufflePos + 1;
 
             if (nextShufflePos >= this._shuffleOrder.length) {
                 // End of shuffle order
                 if (this.repeatMode === 'all') {
                     this.generateShuffleOrder(); // reshuffle for next cycle
-                    nextIndex = this._shuffleOrder[0];
+                    nextId = this._shuffleOrder[0];
                 } else {
                     await this.stop();
                     return;
                 }
             } else {
-                nextIndex = this._shuffleOrder[nextShufflePos];
+                nextId = this._shuffleOrder[nextShufflePos];
             }
+            nextIndex = this.queue.findIndex(t => t.instanceId === nextId);
         } else {
-            nextIndex = this.queueIndex + 1;
+            const currentIndex = this.queue.findIndex(t => t.instanceId === this.currentQueueId);
+            nextIndex = currentIndex + 1;
             if (nextIndex >= this.queue.length) {
                 if (this.repeatMode === 'all') {
                     nextIndex = 0;
@@ -285,10 +312,11 @@ export class AudioStore {
                     return;
                 }
             }
+            nextId = this.queue[nextIndex].instanceId;
         }
 
-        this._shuffleHistory.push(nextIndex);
-        this.queueIndex = nextIndex;
+        this._shuffleHistory.push(nextId!);
+        this.currentQueueId = nextId;
         await this.load(this.queue[nextIndex].file_path);
     }
 
@@ -304,12 +332,21 @@ export class AudioStore {
         if (this.shuffleEnabled && this._shuffleHistory.length > 1) {
             // Pop current, go to previous in history
             this._shuffleHistory.pop();
-            const prevIndex = this._shuffleHistory[this._shuffleHistory.length - 1];
-            this.queueIndex = prevIndex;
-            await this.load(this.queue[prevIndex].file_path);
-        } else if (!this.shuffleEnabled && this.queueIndex > 0) {
-            this.queueIndex--;
-            await this.load(this.queue[this.queueIndex].file_path);
+            const prevId = this._shuffleHistory[this._shuffleHistory.length - 1];
+            this.currentQueueId = prevId;
+            const index = this.queue.findIndex(t => t.instanceId === prevId);
+            if (index !== -1) {
+                await this.load(this.queue[index].file_path);
+            }
+        } else if (!this.shuffleEnabled) {
+            const currentIndex = this.queue.findIndex(t => t.instanceId === this.currentQueueId);
+            if (currentIndex > 0) {
+                const prevIndex = currentIndex - 1;
+                this.currentQueueId = this.queue[prevIndex].instanceId;
+                await this.load(this.queue[prevIndex].file_path);
+            } else {
+                await this.seek(0);
+            }
         } else {
             // At the start of the queue, just restart
             await this.seek(0);
@@ -331,11 +368,11 @@ export class AudioStore {
 
     /** Fisher-Yates shuffle. Current track goes to position 0 so it stays "now playing". */
     private generateShuffleOrder() {
-        const indices = Array.from({ length: this.queue.length }, (_, i) => i);
+        const ids = this.queue.map(t => t.instanceId);
         
-        // Remove current index from the pool
-        const currentIdx = this.queueIndex >= 0 ? this.queueIndex : 0;
-        const filtered = indices.filter(i => i !== currentIdx);
+        // Remove current track from the pool
+        const currentId = this.currentQueueId || (ids.length > 0 ? ids[0] : null);
+        const filtered = ids.filter(id => id !== currentId);
         
         // Fisher-Yates
         for (let i = filtered.length - 1; i > 0; i--) {
@@ -344,7 +381,7 @@ export class AudioStore {
         }
         
         // Current track goes first
-        this._shuffleOrder = [currentIdx, ...filtered];
+        this._shuffleOrder = currentId ? [currentId, ...filtered] : filtered;
     }
 
     // ══════════════════════════════════════════

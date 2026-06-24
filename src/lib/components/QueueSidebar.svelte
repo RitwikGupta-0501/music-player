@@ -6,8 +6,68 @@
 
     let { open = $bindable(false) } = $props<{ open?: boolean }>();
 
-    function jumpToTrack(index: number) {
-        audioStore.jumpToIndex(index);
+    let draggedIndex = -1;
+    let dragoverIndex = $state(-1);
+    let justReorderedIndex = $state(-1);
+
+    function jumpToTrack(instanceId: string) {
+        audioStore.jumpToTrack(instanceId);
+    }
+
+    function handleDragStart(e: DragEvent, index: number) {
+        draggedIndex = index;
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            // Create a custom drag image
+            const dragImage = document.createElement('div');
+            dragImage.style.position = 'absolute';
+            dragImage.style.top = '-9999px';
+            dragImage.style.left = '-9999px';
+            dragImage.style.background = 'rgba(255, 255, 255, 0.1)';
+            dragImage.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+            dragImage.style.borderRadius = '6px';
+            dragImage.style.padding = '0.6rem 1rem';
+            dragImage.style.fontSize = '0.8rem';
+            dragImage.style.color = 'rgb(200, 200, 200)';
+            dragImage.style.whiteSpace = 'nowrap';
+            dragImage.textContent = audioStore.queue[index]?.title || 'Track';
+            document.body.appendChild(dragImage);
+            e.dataTransfer.setDragImage(dragImage, 0, 0);
+            setTimeout(() => document.body.removeChild(dragImage), 0);
+        }
+    }
+
+    async function handleDrop(e: DragEvent, targetIndex: number) {
+        e.preventDefault();
+        dragoverIndex = -1;
+        if (draggedIndex !== -1 && draggedIndex !== targetIndex) {
+            try {
+                await audioStore.reorderQueue(draggedIndex, targetIndex);
+                justReorderedIndex = targetIndex;
+                setTimeout(() => {
+                    justReorderedIndex = -1;
+                }, 300);
+            } catch (error) {
+                console.error("Failed to reorder queue:", error);
+            }
+        }
+        draggedIndex = -1;
+    }
+
+    function handleDragOver(e: DragEvent, index: number) {
+        e.preventDefault();
+        dragoverIndex = index;
+        if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = "move";
+        }
+    }
+
+    function handleDragLeave(e: DragEvent) {
+        // Only clear if leaving the row entirely
+        const target = e.relatedTarget as HTMLElement;
+        if (!target?.closest('.queue-row')) {
+            dragoverIndex = -1;
+        }
     }
 </script>
 
@@ -49,16 +109,25 @@
             </div>
         {:else}
             <div class="queue-list">
-                {#each audioStore.queue as track, i}
+                {#each audioStore.queue as track, i (track.instanceId)}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
                         class="queue-row"
-                        class:playing={i === audioStore.queueIndex}
-                        onclick={() => jumpToTrack(i)}
+                        class:playing={track.instanceId === audioStore.currentQueueId}
+                        class:drag-over={dragoverIndex === i}
+                        class:just-reordered={justReorderedIndex === i}
+                        draggable="true"
+                        ondragstart={(e) => handleDragStart(e, i)}
+                        ondragenter={(e) => { e.preventDefault(); dragoverIndex = i; }}
+                        ondragover={(e) => handleDragOver(e, i)}
+                        ondragleave={handleDragLeave}
+                        ondrop={(e) => handleDrop(e, i)}
+                        ondragend={() => { dragoverIndex = -1; draggedIndex = -1; }}
+                        onclick={() => jumpToTrack(track.instanceId)}
                     >
                         <span class="row-num">
-                            {#if i === audioStore.queueIndex}
+                            {#if track.instanceId === audioStore.currentQueueId}
                                 <!-- Playing indicator: three animated bars -->
                                 <span class="playing-bars" aria-label="Now playing">
                                     <span></span>
@@ -188,22 +257,44 @@
     }
 
     .queue-row {
+        position: relative;
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        padding: 0.55rem 1.25rem;
+        gap: 0.85rem;
+        padding: 0.6rem 1.25rem;
         cursor: pointer;
-        transition: background 0.12s ease;
-        border-left: 2px solid transparent;
+        transition: background 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+        user-select: none;
     }
 
     .queue-row:hover {
         background: rgba(255 255 255 / 0.04);
     }
 
+    .queue-row.drag-over {
+        border-top: 2px solid var(--echo-accent);
+        background: rgba(255 255 255 / 0.05);
+    }
+
     .queue-row.playing {
         background: rgba(255 255 255 / 0.04);
         border-left-color: var(--echo-silver);
+    }
+
+    .queue-row[draggable="true"]:active {
+        opacity: 0.6;
+        transform: scale(0.98);
+    }
+
+    .queue-row.just-reordered {
+        background: rgba(255, 255, 255, 0.08);
+        animation: pulse-highlight 0.3s ease-out;
+    }
+
+    @keyframes pulse-highlight {
+        0% { background: rgba(255, 255, 255, 0.12); transform: scale(1); }
+        50% { background: rgba(255, 255, 255, 0.08); }
+        100% { background: rgba(255, 255, 255, 0.04); transform: scale(1); }
     }
 
     .row-num {

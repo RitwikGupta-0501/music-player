@@ -218,12 +218,12 @@ async fn extract_and_cache_artwork(app_handle: AppHandle, track_id: i64, file_pa
     let app_data_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
     let artwork_dir = app_data_dir.join("artwork");
     std::fs::create_dir_all(&artwork_dir).map_err(|e| e.to_string())?;
-    
+
     let dest_path = artwork_dir.join(format!("{}.jpg", track_id));
     if dest_path.exists() {
         return Ok(Some(dest_path.to_string_lossy().to_string()));
     }
-    
+
     let result = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
         if let Ok(tag) = id3::Tag::read_from_path(&file_path) {
             if let Some(pic) = tag.pictures().next() {
@@ -234,8 +234,22 @@ async fn extract_and_cache_artwork(app_handle: AppHandle, track_id: i64, file_pa
         }
         Ok(None)
     }).await.map_err(|e| e.to_string())?;
-    
+
     result
+}
+
+#[tauri::command]
+fn validate_queue_reorder(from_index: u32, to_index: u32, queue_length: u32) -> Result<(), String> {
+    if from_index >= queue_length {
+        return Err(format!("Invalid source index: {}", from_index));
+    }
+    if to_index >= queue_length {
+        return Err(format!("Invalid target index: {}", to_index));
+    }
+    if from_index == to_index {
+        return Err("Source and target indices are the same".to_string());
+    }
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -319,6 +333,7 @@ pub fn run() {
             delete_playlist,
             rename_playlist,
             reorder_playlist_track,
+            validate_queue_reorder,
             extract_and_cache_artwork,
             clear_local_library,
             get_setting,

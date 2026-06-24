@@ -212,17 +212,24 @@ pub fn insert_tracks(conn: &mut Connection, tracks: Vec<TrackData>) -> Result<us
     
     // Pre-prepare inside the transaction to avoid compiling on every loop
     let mut album_select = tx.prepare("SELECT id FROM albums WHERE title = ?1 AND artist = ?2").map_err(|e| e.to_string())?;
+    let mut album_cache: std::collections::HashMap<(String, String), Option<i64>> = std::collections::HashMap::new();
 
     for track in tracks {
         let album_title = track.album.unwrap_or_else(|| "Unknown Album".to_string());
         let album_artist = track.artist.clone().unwrap_or_else(|| "Unknown Artist".to_string());
+        let cache_key = (album_title.clone(), album_artist.clone());
 
-        let _ = tx.execute(
-            "INSERT OR IGNORE INTO albums (title, artist) VALUES (?1, ?2)",
-            (&album_title, &album_artist),
-        );
-        
-        let album_id: Option<i64> = album_select.query_row((&album_title, &album_artist), |row| row.get(0)).ok();
+        let album_id = if let Some(&id) = album_cache.get(&cache_key) {
+            id
+        } else {
+            let _ = tx.execute(
+                "INSERT OR IGNORE INTO albums (title, artist) VALUES (?1, ?2)",
+                (&album_title, &album_artist),
+            );
+            let id: Option<i64> = album_select.query_row((&album_title, &album_artist), |row| row.get(0)).ok();
+            album_cache.insert(cache_key, id);
+            id
+        };
 
         let res = tx.execute(
             "INSERT OR IGNORE INTO tracks (title, artist, album_id, track_number, file_path) VALUES (?1, ?2, ?3, ?4, ?5)",

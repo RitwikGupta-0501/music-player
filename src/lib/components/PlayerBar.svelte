@@ -55,8 +55,10 @@
     );
 
     let displayProgress = $derived(isSeeking ? seekProgress : progress);
-    
-    let volumeProgress = $derived(audioStore.isMuted ? 0 : audioStore.volume * 100);
+
+    let volumeProgress = $derived(
+        audioStore.isMuted ? 0 : audioStore.volume * 100,
+    );
 
     function formatTime(seconds: number): string {
         if (isNaN(seconds) || seconds < 0) return "0:00";
@@ -336,7 +338,9 @@
         border-radius: 50%;
         opacity: 0;
         box-shadow: 0 0 8px rgba(181, 142, 98, 0.6);
-        transition: opacity 0.2s, transform 0.2s;
+        transition:
+            opacity 0.2s,
+            transform 0.2s;
         pointer-events: none;
     }
     .seek-hitbox:hover .seek-thumb {
@@ -561,7 +565,9 @@
         border-radius: 50%;
         opacity: 0;
         box-shadow: 0 0 6px rgba(181, 142, 98, 0.5);
-        transition: opacity 0.2s, transform 0.2s;
+        transition:
+            opacity 0.2s,
+            transform 0.2s;
         pointer-events: none;
     }
     .vol-wrapper:hover .vol-thumb {

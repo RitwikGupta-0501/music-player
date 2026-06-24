@@ -28,7 +28,10 @@ pub enum AudioCommand {
     Quit,
 }
 
-pub fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) -> thread::JoinHandle<()> {
+pub fn start_audio_thread(
+    rx: Receiver<AudioCommand>,
+    app_handle: AppHandle,
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let (_stream, stream_handle) =
             OutputStream::try_default().expect("Failed to get audio output");
@@ -39,14 +42,18 @@ pub fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) -> 
         let mut current_volume: f32 = 1.0;
         let mut is_muted: bool = false;
 
-        let emit_sync = |handle: &AppHandle, state: &str, sink: &Sink, track: &str, duration: f64| {
-            let _ = handle.emit("player-sync", PlayerSync {
-                state: state.to_string(),
-                position: sink.get_pos().as_secs_f64(),
-                duration,
-                track: track.to_string(),
-            });
-        };
+        let emit_sync =
+            |handle: &AppHandle, state: &str, sink: &Sink, track: &str, duration: f64| {
+                let _ = handle.emit(
+                    "player-sync",
+                    PlayerSync {
+                        state: state.to_string(),
+                        position: sink.get_pos().as_secs_f64(),
+                        duration,
+                        track: track.to_string(),
+                    },
+                );
+            };
 
         loop {
             // Track End Detection
@@ -57,81 +64,109 @@ pub fn start_audio_thread(rx: Receiver<AudioCommand>, app_handle: AppHandle) -> 
             }
 
             match rx.try_recv() {
-                Ok(cmd) => {
-                    match cmd {
-                        AudioCommand::Load(path) => {
-                            sink.stop();
-                            match SymphoniaSource::from_path(std::path::Path::new(&path)) {
-                                Ok(src) => {
-                                    current_duration = src.total_duration()
-                                        .map(|d| d.as_secs_f64())
-                                        .unwrap_or(0.0);
-                                    sink.append(src);
+                Ok(cmd) => match cmd {
+                    AudioCommand::Load(path) => {
+                        sink.stop();
+                        match SymphoniaSource::from_path(std::path::Path::new(&path)) {
+                            Ok(src) => {
+                                current_duration =
+                                    src.total_duration().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                                sink.append(src);
+                                sink.play();
+                                current_track_path = path;
+                                let _ = app_handle.emit(
+                                    "player-sync",
+                                    PlayerSync {
+                                        state: "Playing".to_string(),
+                                        position: 0.0,
+                                        duration: current_duration,
+                                        track: current_track_path.clone(),
+                                    },
+                                );
+                            }
+                            Err(e) => eprintln!("Audio load failed: {e}"),
+                        }
+                    }
+                    AudioCommand::Play => {
+                        sink.play();
+                        emit_sync(
+                            &app_handle,
+                            "Playing",
+                            &sink,
+                            &current_track_path,
+                            current_duration,
+                        );
+                    }
+                    AudioCommand::Pause => {
+                        sink.pause();
+                        emit_sync(
+                            &app_handle,
+                            "Paused",
+                            &sink,
+                            &current_track_path,
+                            current_duration,
+                        );
+                    }
+                    AudioCommand::Stop => {
+                        sink.stop();
+                        current_track_path.clear();
+                        current_duration = 0.0;
+                        emit_sync(&app_handle, "Stopped", &sink, "", 0.0);
+                    }
+                    AudioCommand::Seek(pos) => {
+                        if current_track_path.is_empty() {
+                            continue;
+                        }
+                        let was_paused = sink.is_paused();
+                        let seek_pos = Duration::from_secs_f64(pos);
+
+                        match SymphoniaSource::from_path_seeked(
+                            std::path::Path::new(&current_track_path),
+                            seek_pos,
+                        ) {
+                            Ok(src) => {
+                                sink.stop();
+                                sink.append(src);
+                                if !was_paused {
                                     sink.play();
-                                    current_track_path = path;
-                                    emit_sync(&app_handle, "Playing", &sink, &current_track_path, current_duration);
                                 }
-                                Err(e) => eprintln!("Audio load failed: {e}"),
                             }
+                            Err(e) => eprintln!("Audio seek failed: {e}"),
                         }
-                        AudioCommand::Play => {
-                            sink.play();
-                            emit_sync(&app_handle, "Playing", &sink, &current_track_path, current_duration);
-                        }
-                        AudioCommand::Pause => {
-                            sink.pause();
-                            emit_sync(&app_handle, "Paused", &sink, &current_track_path, current_duration);
-                        }
-                        AudioCommand::Stop => {
-                            sink.stop();
-                            current_track_path.clear();
-                            current_duration = 0.0;
-                            emit_sync(&app_handle, "Stopped", &sink, "", 0.0);
-                        }
-                        AudioCommand::Seek(pos) => {
-                            if current_track_path.is_empty() { continue; }
-                            let was_paused = sink.is_paused();
-                            let seek_pos = Duration::from_secs_f64(pos);
 
-                            match SymphoniaSource::from_path_seeked(
-                                std::path::Path::new(&current_track_path),
-                                seek_pos,
-                            ) {
-                                Ok(src) => {
-                                    sink.stop();
-                                    sink.append(src);
-                                    if !was_paused { sink.play(); }
-                                }
-                                Err(e) => eprintln!("Audio seek failed: {e}"),
-                            }
-
-                            let state_str = if sink.is_paused() { "Paused" } else { "Playing" };
-                            let _ = app_handle.emit("player-sync", PlayerSync {
+                        let state_str = if sink.is_paused() {
+                            "Paused"
+                        } else {
+                            "Playing"
+                        };
+                        let _ = app_handle.emit(
+                            "player-sync",
+                            PlayerSync {
                                 state: state_str.to_string(),
                                 position: pos,
                                 duration: current_duration,
                                 track: current_track_path.clone(),
-                            });
-                        }
-                        AudioCommand::SetVolume(vol) => {
-                            current_volume = vol;
-                            if !is_muted {
-                                sink.set_volume(current_volume);
-                            }
-                        }
-                        AudioCommand::SetMute(muted) => {
-                            is_muted = muted;
-                            if is_muted {
-                                sink.set_volume(0.0);
-                            } else {
-                                sink.set_volume(current_volume);
-                            }
-                        }
-                        AudioCommand::Quit => {
-                            break;
+                            },
+                        );
+                    }
+                    AudioCommand::SetVolume(vol) => {
+                        current_volume = vol;
+                        if !is_muted {
+                            sink.set_volume(current_volume);
                         }
                     }
-                }
+                    AudioCommand::SetMute(muted) => {
+                        is_muted = muted;
+                        if is_muted {
+                            sink.set_volume(0.0);
+                        } else {
+                            sink.set_volume(current_volume);
+                        }
+                    }
+                    AudioCommand::Quit => {
+                        break;
+                    }
+                },
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     thread::sleep(Duration::from_millis(50));
                 }
