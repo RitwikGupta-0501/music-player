@@ -1,20 +1,41 @@
 <script lang="ts">
     import { audioStore } from "$lib/stores/audio.svelte";
-    import { 
-        Play, 
-        Pause, 
-        SkipBack, 
-        SkipForward, 
-        Shuffle, 
-        Repeat, 
-        Repeat1, 
-        Volume2, 
+    import { libraryStore } from "$lib/stores/library.svelte";
+    import {
+        Play,
+        Pause,
+        SkipBack,
+        SkipForward,
+        Shuffle,
+        Repeat,
+        Repeat1,
+        Volume2,
         VolumeX,
-        ListOrdered
+        ListOrdered,
     } from "lucide-svelte";
 
     let { queueOpen = $bindable(false) } = $props<{ queueOpen?: boolean }>();
 
+    /* ── Album art for now-playing track ── */
+    let playerArtUrl = $state<string | null>(null);
+
+    $effect(() => {
+        const track = audioStore.currentQueueTrack;
+        if (track) {
+            libraryStore
+                .getArtworkUrl(track.id, track.file_path)
+                .then((url) => {
+                    playerArtUrl = url;
+                })
+                .catch(() => {
+                    playerArtUrl = null;
+                });
+        } else {
+            playerArtUrl = null;
+        }
+    });
+
+    /* ── Playback helpers ── */
     function handlePlayPause() {
         if (audioStore.playbackState === "Playing") {
             audioStore.pause();
@@ -23,297 +44,586 @@
         }
     }
 
-    function formatTime(seconds: number) {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    // -- Seek State --
+    let isSeeking = $state(false);
+    let seekProgress = $state(0);
+
+    let progress = $derived(
+        audioStore.duration > 0
+            ? (audioStore.currentTime / audioStore.duration) * 100
+            : 0,
+    );
+
+    let displayProgress = $derived(isSeeking ? seekProgress : progress);
+    
+    let volumeProgress = $derived(audioStore.isMuted ? 0 : audioStore.volume * 100);
+
+    function formatTime(seconds: number): string {
+        if (isNaN(seconds) || seconds < 0) return "0:00";
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${s.toString().padStart(2, "0")}`;
     }
 
-    function handleSeek(e: MouseEvent) {
+    function handleSeekPointerDown() {
         if (audioStore.duration <= 0) return;
-        const track = e.currentTarget as HTMLElement;
-        const rect = track.getBoundingClientRect();
-        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        audioStore.seek(pct * audioStore.duration);
+        isSeeking = true;
+        seekProgress = progress;
     }
 
-    let progress = $derived(audioStore.duration > 0 ? (audioStore.currentTime / audioStore.duration) * 100 : 0);
+    function handleSeekInput(e: Event) {
+        if (audioStore.duration <= 0) return;
+        isSeeking = true;
+        const input = e.target as HTMLInputElement;
+        seekProgress = parseFloat(input.value);
+    }
 
-    // Display-friendly track name
-    let displayTrack = $derived.by(() => {
-        if (!audioStore.currentQueueTrack) return audioStore.currentTrack !== "None" ? audioStore.currentTrack : "Ready to play";
-        const t = audioStore.currentQueueTrack;
-        return t.artist ? `${t.title} — ${t.artist}` : t.title;
+    function handleSeekChange(e: Event) {
+        if (audioStore.duration <= 0) return;
+        const input = e.target as HTMLInputElement;
+        const pct = parseFloat(input.value) / 100;
+        audioStore.seek(pct * audioStore.duration);
+        isSeeking = false;
+    }
+
+    function handleVolume(e: Event) {
+        const input = e.target as HTMLInputElement;
+        audioStore.setVolume(parseFloat(input.value));
+    }
+
+    let trackTitle = $derived.by(() => {
+        if (audioStore.currentQueueTrack)
+            return audioStore.currentQueueTrack.title;
+        if (audioStore.currentTrack !== "None") return audioStore.currentTrack;
+        return "Nothing playing";
     });
+
+    let trackArtist = $derived(audioStore.currentQueueTrack?.artist ?? null);
+
+    let isPlaying = $derived(audioStore.playbackState === "Playing");
+    let hasTrack = $derived(
+        audioStore.currentQueueTrack !== null ||
+            audioStore.currentTrack !== "None",
+    );
+    let pillState = $derived(
+        hasTrack ? (isPlaying ? "playing" : "paused") : "idle",
+    );
 </script>
 
-<div class="bottom-player">
-    <!-- Left: Track Info -->
-    <div class="player-info">
-        <span class="now-playing-title">{displayTrack}</span>
-        {#if audioStore.queue.length > 0}
-            <span class="text-muted">Track {audioStore.queueIndex + 1} of {audioStore.queue.length}</span>
-        {/if}
-    </div>
-
-    <!-- Center: Controls + Progress Bar -->
-    <div class="player-center">
-        <!-- Transport Controls -->
-        <div class="player-controls">
-            <button
-                class="control-btn"
-                class:active={audioStore.shuffleEnabled}
-                onclick={() => audioStore.toggleShuffle()}
-                title="Shuffle"
-            >
-                <Shuffle size={16} />
-            </button>
-
-            <button class="control-btn" onclick={() => audioStore.previous()} title="Previous">
-                <SkipBack size={18} fill="currentColor" />
-            </button>
-
-            <button class="control-btn play-btn" onclick={handlePlayPause} title={audioStore.playbackState === "Playing" ? "Pause" : "Play"}>
-                {#if audioStore.playbackState === "Playing"}
-                    <Pause size={20} fill="currentColor" />
-                {:else}
-                    <Play size={20} fill="currentColor" />
-                {/if}
-            </button>
-
-            <button class="control-btn" onclick={() => audioStore.next()} title="Next">
-                <SkipForward size={18} fill="currentColor" />
-            </button>
-
-            <button
-                class="control-btn"
-                class:active={audioStore.repeatMode !== 'off'}
-                onclick={() => audioStore.cycleRepeat()}
-                title="Repeat: {audioStore.repeatMode}"
-            >
-                {#if audioStore.repeatMode === 'one'}
-                    <Repeat1 size={16} />
-                {:else}
-                    <Repeat size={16} />
-                {/if}
-            </button>
-        </div>
-
-        <!-- Progress Section -->
-        <div class="progress-section">
-            <span class="time">{formatTime(audioStore.currentTime)}</span>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="progress-track" style="--progress: {progress}%" onclick={handleSeek}>
-                <div class="progress-fill"></div>
-                <div class="progress-thumb"></div>
+<div class="player-pill-container">
+    <div class="player-pill-wrapper" data-state={pillState}>
+        <!-- 1. Fitts's Law Top-Edge Seek Bar -->
+        <div class="seek-hitbox group">
+            <div class="seek-track">
+                <div
+                    class="seek-fill pill-accent-bg"
+                    style="width: {displayProgress}%"
+                ></div>
             </div>
-            <span class="time">{formatTime(audioStore.duration)}</span>
+            <div
+                class="seek-thumb pill-accent-bg"
+                style="left: {displayProgress}%"
+            ></div>
+            <input
+                type="range"
+                class="range-overlay"
+                min="0"
+                max="100"
+                step="0.1"
+                value={displayProgress}
+                onpointerdown={handleSeekPointerDown}
+                oninput={handleSeekInput}
+                onchange={handleSeekChange}
+                aria-label="Seek"
+            />
         </div>
-    </div>
 
-    <!-- Right: Volume + Queue toggle -->
-    <div class="player-right">
-        <button class="control-btn volume-btn" onclick={() => audioStore.toggleMute()} title={audioStore.isMuted ? "Unmute" : "Mute"}>
-            {#if audioStore.isMuted || audioStore.volume === 0}
-                <VolumeX size={18} />
-            {:else}
-                <Volume2 size={18} />
-            {/if}
-        </button>
-        <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={audioStore.isMuted ? 0 : audioStore.volume}
-            oninput={(e) => audioStore.setVolume(parseFloat(e.currentTarget.value))}
-            class="volume-slider"
-        />
-        <button
-            class="control-btn"
-            class:active={queueOpen}
-            onclick={() => queueOpen = !queueOpen}
-            title="Queue"
-        >
-            <ListOrdered size={18} />
-        </button>
+        <!-- 2. Main Pill Body -->
+        <div class="pill-body">
+            <!-- Left Flank: Album Art & Song Details -->
+            <div class="flank flank-left">
+                <div class="album-art-container">
+                    {#if playerArtUrl}
+                        <img src={playerArtUrl} alt="Now playing artwork" />
+                    {:else}
+                        <div class="placeholder bg-zinc-800"></div>
+                    {/if}
+                </div>
+
+                <div class="song-details">
+                    <span class="song-title">
+                        {trackTitle}
+                    </span>
+                    <div class="song-time">
+                        <span>{formatTime(audioStore.currentTime)}</span>
+                        <span class="text-white-20">/</span>
+                        <span>{formatTime(audioStore.duration)}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center: Transport Controls -->
+            <div class="center-controls">
+                <button
+                    class="ctrl-btn"
+                    class:active={audioStore.shuffleEnabled}
+                    onclick={() => audioStore.toggleShuffle()}
+                >
+                    <Shuffle size={14} />
+                </button>
+                <button class="ctrl-btn" onclick={() => audioStore.previous()}>
+                    <SkipBack size={18} />
+                </button>
+
+                <button
+                    class="play-pause-btn pill-accent-bg pill-accent-shadow"
+                    onclick={handlePlayPause}
+                    disabled={!hasTrack}
+                >
+                    {#if isPlaying}
+                        <Pause size={18} fill="currentColor" />
+                    {:else}
+                        <Play size={18} fill="currentColor" />
+                    {/if}
+                </button>
+
+                <button class="ctrl-btn" onclick={() => audioStore.next()}>
+                    <SkipForward size={18} />
+                </button>
+                <button
+                    class="ctrl-btn"
+                    class:active={audioStore.repeatMode !== "off"}
+                    onclick={() => audioStore.cycleRepeat()}
+                >
+                    {#if audioStore.repeatMode === "one"}
+                        <Repeat1 size={14} />
+                    {:else}
+                        <Repeat size={14} />
+                    {/if}
+                </button>
+            </div>
+
+            <!-- Right Flank: Utilities -->
+            <div class="flank flank-right">
+                <button
+                    class="ctrl-btn"
+                    class:active={queueOpen}
+                    onclick={() => (queueOpen = !queueOpen)}
+                >
+                    <ListOrdered size={14} />
+                </button>
+
+                <div class="vol-wrapper group">
+                    <button
+                        class="vol-icon text-muted"
+                        onclick={() => audioStore.toggleMute()}
+                    >
+                        {#if audioStore.isMuted || audioStore.volume === 0}
+                            <VolumeX size={14} />
+                        {:else}
+                            <Volume2 size={14} />
+                        {/if}
+                    </button>
+                    <div class="vol-hitbox">
+                        <div class="vol-track">
+                            <div
+                                class="vol-fill pill-accent-bg"
+                                style="width: {volumeProgress}%"
+                            ></div>
+                        </div>
+                        <div
+                            class="vol-thumb pill-accent-bg"
+                            style="left: {volumeProgress}%"
+                        ></div>
+                        <input
+                            type="range"
+                            class="range-overlay"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={audioStore.isMuted ? 0 : audioStore.volume}
+                            oninput={handleVolume}
+                            aria-label="Volume"
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
 <style>
-    /* ── Progress Bar Theme Tokens ── */
-    .progress-track {
-        --pb-height: 4px;
-        --pb-thumb-size: 10px;
-        --pb-fill-color: var(--color-cyan);
-        --pb-track-color: rgba(255, 255, 255, 0.1);
-        --pb-thumb-glow: rgba(102, 252, 241, 0.5);
-        --pb-radius: 2px;
+    /* CSS Variables matching user HTML */
+    :global(body) {
+        --text-main: #eae8e3;
+        --muted: #7a7885;
+        --pill-bg: #1a1a1a;
     }
 
-    .now-playing-title {
-        font-family: var(--font-display);
-        font-weight: 600;
-        color: #fff;
-        font-size: 0.95rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 280px;
-        display: block;
+    .text-muted {
+        color: var(--muted);
+    }
+    .text-white-20 {
+        color: rgba(255, 255, 255, 0.2);
     }
 
-    .player-info {
+    .player-pill-container {
+        position: fixed;
+        bottom: 3rem; /* bottom-12 */
+        left: var(--sidebar-w, 0);
+        right: 0;
+        height: 72px;
+        z-index: 50;
         display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        width: 30%;
-        min-width: 200px;
+        justify-content: center;
+        pointer-events: none;
     }
 
-    .player-center {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        max-width: 600px;
-    }
-
-    .progress-section {
-        width: 100%;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .time {
-        font-family: var(--font-body);
-        font-size: 0.8rem;
-        color: var(--color-chalk-muted);
-        min-width: 35px;
-        text-align: center;
-    }
-
-    .progress-track {
+    .player-pill-wrapper {
         position: relative;
-        flex: 1;
-        height: var(--pb-height);
-        background: var(--pb-track-color);
-        border-radius: var(--pb-radius);
-        cursor: pointer;
-    }
-
-    .progress-fill {
-        position: absolute;
-        top: 0;
-        left: 0;
         height: 100%;
-        width: var(--progress);
-        background: var(--pb-fill-color);
-        border-radius: var(--pb-radius);
-        transition: width 0.05s linear;
+        transition:
+            width 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+            background-color 0.4s ease;
+        pointer-events: auto;
     }
 
-    .progress-thumb {
+    .player-pill-wrapper[data-state="idle"] {
+        width: 340px;
+    }
+    .player-pill-wrapper[data-state="playing"],
+    .player-pill-wrapper[data-state="paused"] {
+        width: 720px;
+    }
+
+    /* Fitts's Law Top-Edge Seek Bar */
+    .seek-hitbox {
+        position: absolute;
+        top: -10px;
+        left: 32px;
+        right: 32px;
+        height: 20px;
+        cursor: pointer;
+        z-index: 20;
+    }
+    .seek-track {
         position: absolute;
         top: 50%;
-        left: var(--progress);
-        width: var(--pb-thumb-size);
-        height: var(--pb-thumb-size);
-        background: var(--pb-fill-color);
-        border-radius: 50%;
-        transform: translate(-50%, -50%);
-        box-shadow: 0 0 8px var(--pb-thumb-glow);
-        opacity: 0;
-        transition: opacity 0.2s ease;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-top-left-radius: 9999px;
+        border-top-right-radius: 9999px;
+        transform: translateY(-50%);
+        transition: all 0.2s;
+        overflow: hidden;
     }
-
-    .progress-track:hover .progress-thumb {
-        opacity: 1;
-    }
-
-    /* ── Transport Controls ── */
-    .player-controls {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-
-    .control-btn {
-        background: transparent;
-        border: none;
-        color: var(--color-chalk-muted);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0.4rem;
-        border-radius: 50%;
-        cursor: pointer;
-        transition: all 0.15s ease;
-    }
-
-    .control-btn:hover {
-        color: #fff;
-        background: rgba(255, 255, 255, 0.08);
-    }
-
-    .control-btn.active {
-        color: var(--color-cyan);
-    }
-
-    .control-btn.play-btn {
-        background: var(--color-cyan);
-        color: var(--color-bg);
-        padding: 0.6rem;
-    }
-
-    .control-btn.play-btn:hover {
-        background: #fff;
-        color: var(--color-bg);
-        transform: scale(1.05);
-    }
-
-    /* ── Player Right (Volume) ── */
-    .player-right {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        justify-content: flex-end;
-        width: 30%;
-        min-width: 150px;
-    }
-
-    .volume-slider {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 100px;
+    .seek-hitbox:hover .seek-track {
         height: 4px;
-        border-radius: 2px;
-        background: rgba(255, 255, 255, 0.15);
-        outline: none;
-        cursor: pointer;
-        transition: background 0.15s ease;
     }
-
-    .volume-slider:hover {
-        background: rgba(255, 255, 255, 0.25);
+    .seek-fill {
+        height: 100%;
+        border-top-right-radius: 9999px;
+        border-bottom-right-radius: 9999px;
     }
-
-    .volume-slider::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        appearance: none;
+    .seek-thumb {
+        position: absolute;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(0.5);
         width: 10px;
         height: 10px;
         border-radius: 50%;
-        background: var(--color-cyan);
-        box-shadow: 0 0 8px rgba(102, 252, 241, 0.5);
+        opacity: 0;
+        box-shadow: 0 0 8px rgba(181, 142, 98, 0.6);
+        transition: opacity 0.2s, transform 0.2s;
+        pointer-events: none;
+    }
+    .seek-hitbox:hover .seek-thumb {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+    .range-overlay {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
         cursor: pointer;
-        transition: transform 0.1s ease;
+        margin: 0;
     }
 
-    .volume-slider::-webkit-slider-thumb:hover {
-        transform: scale(1.2);
+    /* Main Pill Body */
+    .pill-body {
+        width: 100%;
+        height: 100%;
+        background-color: var(--pill-bg);
+        border-radius: 9999px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 10;
+        backdrop-filter: blur(12px);
+    }
+
+    /* Flanks */
+    .flank {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+        transition-delay: 0s;
+    }
+    .player-pill-wrapper[data-state="playing"] .flank,
+    .player-pill-wrapper[data-state="paused"] .flank {
+        opacity: 1;
+        pointer-events: auto;
+        transition-delay: 0.2s;
+    }
+
+    /* Left Flank */
+    .flank-left {
+        position: absolute;
+        left: 24px;
+        right: calc(50% + 130px);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        overflow: hidden;
+    }
+    .album-art-container {
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+        border-radius: 12px;
+        background-color: #27272a;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        overflow: hidden;
+        box-shadow:
+            0 4px 6px -1px rgba(0, 0, 0, 0.1),
+            0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    .album-art-container img,
+    .album-art-container .placeholder {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        background-position: center;
+        background-size: cover;
+    }
+    .song-details {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-width: 0;
+        width: 100%;
+        padding-top: 2px;
+    }
+    .song-title {
+        font-size: 15px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: block;
+        line-height: 1.25;
+        letter-spacing: 0.025em;
+        color: var(--muted);
+    }
+    .song-time {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 500;
+        margin-top: 2px;
+    }
+
+    /* Center Controls */
+    .center-controls {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
+        z-index: 20;
+    }
+    .ctrl-btn {
+        color: var(--muted);
+        transition:
+            color 0.15s ease,
+            background-color 0.15s ease;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 9999px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+    }
+    .ctrl-btn:hover {
+        color: var(--text-main);
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+    .ctrl-btn.active {
+        color: var(--text-main);
+    }
+
+    .play-pause-btn {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border-radius: 9999px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s;
+        margin: 0 4px;
+        color: var(--pill-bg);
+        border: none;
+        cursor: pointer;
+    }
+    .play-pause-btn:not(:disabled):hover {
+        transform: scale(1.05);
+    }
+    .play-pause-btn:not(:disabled):active {
+        transform: scale(0.95);
+    }
+    .play-pause-btn:disabled {
+        cursor: not-allowed;
+    }
+
+    /* Right Flank */
+    .flank-right {
+        position: absolute;
+        right: 24px;
+        left: calc(50% + 130px);
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        overflow: visible;
+    }
+    .vol-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+    }
+    .vol-icon {
+        background: transparent;
+        border: none;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: color 0.15s ease;
+    }
+    .vol-wrapper:hover .vol-icon {
+        color: var(--text-main);
+    }
+    .vol-hitbox {
+        position: relative;
+        width: 48px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        overflow: visible;
+    }
+    .vol-track {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 9999px;
+        overflow: hidden;
+    }
+    .vol-fill {
+        height: 100%;
+        transition: background-color 0.4s;
+    }
+    .vol-thumb {
+        position: absolute;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(0.5);
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        opacity: 0;
+        box-shadow: 0 0 6px rgba(181, 142, 98, 0.5);
+        transition: opacity 0.2s, transform 0.2s;
+        pointer-events: none;
+    }
+    .vol-wrapper:hover .vol-thumb {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+
+    /* State-based styling */
+    /* Base / Idle State Colors */
+    .player-pill-wrapper[data-state="idle"] .pill-accent-text {
+        color: #5a4a38;
+    }
+    .player-pill-wrapper[data-state="idle"] .pill-accent-bg {
+        background-color: #4a3c2b;
+    } /* Unlit, dull brass */
+    .player-pill-wrapper[data-state="idle"] .pill-accent-shadow {
+        box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+    } /* Hardware inset shadow */
+    .player-pill-wrapper[data-state="idle"] .play-pause-btn {
+        color: #1a140d;
+    } /* Very dark, unlit icon */
+
+    /* Accent Colors & System Status Transitions */
+    .pill-accent-text,
+    .pill-accent-bg,
+    .pill-accent-shadow,
+    .album-art-container,
+    .song-title {
+        transition: all 0.4s ease;
+    }
+
+    /* Playing State */
+    .player-pill-wrapper[data-state="playing"] .pill-accent-text {
+        color: #b58e62;
+    }
+    .player-pill-wrapper[data-state="playing"] .pill-accent-bg {
+        background-color: #b58e62;
+    }
+    .player-pill-wrapper[data-state="playing"] .pill-accent-shadow {
+        box-shadow: 0 0 15px rgba(181, 142, 98, 0.3);
+    }
+    .player-pill-wrapper[data-state="playing"] .song-title {
+        color: var(--text-main);
+    }
+    .player-pill-wrapper[data-state="playing"] .album-art-container {
+        filter: grayscale(0%) brightness(1);
+    }
+
+    /* Paused State */
+    .player-pill-wrapper[data-state="paused"] .pill-accent-text {
+        color: #8c7355;
+    }
+    .player-pill-wrapper[data-state="paused"] .pill-accent-bg {
+        background-color: #8c7355;
+    }
+    .player-pill-wrapper[data-state="paused"] .pill-accent-shadow {
+        box-shadow: 0 0 10px rgba(140, 115, 85, 0.1);
+    }
+    .player-pill-wrapper[data-state="paused"] .song-title {
+        color: var(--muted);
+    }
+    .player-pill-wrapper[data-state="paused"] .album-art-container {
+        filter: grayscale(40%) brightness(0.6);
     }
 </style>

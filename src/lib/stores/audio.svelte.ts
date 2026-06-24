@@ -47,6 +47,7 @@ export class AudioStore {
     private _autoAdvancing = false;
     
     private unlistenSync: UnlistenFn | null = null;
+    private unlistenTrackEnded: UnlistenFn | null = null;
     private _volumeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
     // ── Derived ──
@@ -79,6 +80,11 @@ export class AudioStore {
             }
         });
 
+        this.unlistenTrackEnded = await listen("track-ended", () => {
+            this._autoAdvancing = true;
+            this.next();
+        });
+
         this.startClock();
 
         // Load volume and mute settings from DB
@@ -100,6 +106,7 @@ export class AudioStore {
 
     destroy() {
         if (this.unlistenSync) this.unlistenSync();
+        if (this.unlistenTrackEnded) this.unlistenTrackEnded();
         this.stopClock();
     }
 
@@ -112,13 +119,6 @@ export class AudioStore {
         if (this._isPlaying && this.duration > 0) {
             const elapsed = (performance.now() - this._syncTimestamp) / 1000;
             this.currentTime = Math.min(this._syncPosition + elapsed, this.duration);
-            
-            // Auto-advance when track ends (with 0.3s threshold to avoid premature trigger)
-            if (this.currentTime >= this.duration - 0.3 && !this._autoAdvancing) {
-                this._autoAdvancing = true;
-                this._isPlaying = false;
-                this.next();
-            }
         }
         this._rafId = requestAnimationFrame(this.tick);
     };
@@ -142,7 +142,26 @@ export class AudioStore {
 
     async load(path: string) {
         this._autoAdvancing = false;
-        await invoke("load_audio", { path });
+        this._syncPosition = 0;
+        this._syncTimestamp = performance.now();
+        try {
+            await invoke("load_audio", { path });
+        } catch (e) {
+            if (e === "FILE_NOT_FOUND") {
+                // Prune the dead track from the DB (fire and forget).
+                invoke("remove_track_by_path", { path }).catch(() => {});
+                // Remove from the in-memory queue. Since queueIndex was already
+                // set to point at this track before load() was called, removing it
+                // shifts the successor into queueIndex — try loading that next.
+                this.queue = this.queue.filter(t => t.file_path !== path);
+                if (this.queueIndex < this.queue.length) {
+                    await this.load(this.queue[this.queueIndex].file_path);
+                } else {
+                    this.queueIndex = -1;
+                    await this.stop();
+                }
+            }
+        }
     }
 
     async play() {
@@ -154,6 +173,7 @@ export class AudioStore {
     }
 
     async stop() {
+        this.queueIndex = -1; // Reset queue visual state so PlayerBar goes Idle
         await invoke("stop_audio");
     }
 

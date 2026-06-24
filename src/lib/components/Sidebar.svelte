@@ -1,90 +1,135 @@
 <script lang="ts">
-    import { Disc, ListMusic, Globe, Settings } from "lucide-svelte";
+    import { Disc3, ListMusic, Radio, Settings2 } from "lucide-svelte";
     let { activeView = $bindable("albums") } = $props<{ activeView?: string }>();
 </script>
 
-<div class="sidebar">
-    <div>
-        <h1 style="margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; letter-spacing: -0.02em;">
-            Echo <span class="text-cyan">Engine</span>
-        </h1>
+<aside class="sidebar">
+    <!-- Wordmark -->
+    <div class="sidebar-top">
+        <span class="wordmark">echo</span>
     </div>
 
-    <nav class="nav-links">
-        <button 
-            class={activeView === "albums" ? "primary" : "ghost"} 
+    <!-- Primary navigation -->
+    <nav class="sidebar-nav">
+        <button
+            class="nav-item"
+            class:active={activeView === "albums"}
             onclick={() => activeView = "albums"}
         >
-            <Disc size={18} />
-            <span>Local Albums</span>
+            <Disc3 size={16} strokeWidth={1.5} />
+            <span>Library</span>
         </button>
-        <button 
-            class={activeView === "playlists" ? "primary" : "ghost"} 
+        <button
+            class="nav-item"
+            class:active={activeView === "playlists"}
             onclick={() => activeView = "playlists"}
         >
-            <ListMusic size={18} />
+            <ListMusic size={16} strokeWidth={1.5} />
             <span>Playlists</span>
         </button>
-        <button 
-            class={activeView === "providers" ? "primary" : "ghost"} 
+        <button
+            class="nav-item"
+            class:active={activeView === "providers"}
             onclick={() => activeView = "providers"}
         >
-            <Globe size={18} />
-            <span>Network Providers</span>
-        </button>
-        <button 
-            class={activeView === "settings" ? "primary" : "ghost"} 
-            onclick={() => activeView = "settings"}
-        >
-            <Settings size={18} />
-            <span>Settings</span>
+            <Radio size={16} strokeWidth={1.5} />
+            <span>Network</span>
         </button>
     </nav>
-</div>
+
+    <!-- Settings pinned to bottom -->
+    <div class="sidebar-footer">
+        <button
+            class="nav-item"
+            class:active={activeView === "settings"}
+            onclick={() => activeView = "settings"}
+        >
+            <Settings2 size={16} strokeWidth={1.5} />
+            <span>Settings</span>
+        </button>
+    </div>
+</aside>
 
 <style>
-    .nav-links {
+    .sidebar {
+        background: rgba(0 0 0 / 0.45);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        border-right: 1px solid var(--echo-border);
+        height: 100vh;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
-        margin-top: 2rem;
+        padding: 1.75rem 0 1.5rem;
+        position: sticky;
+        top: 0;
+        user-select: none;
     }
 
-    .nav-links button {
+    /* Reduced-transparency fallback */
+    @media (prefers-reduced-transparency: reduce) {
+        .sidebar {
+            background: var(--echo-surface);
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+    }
+
+    .sidebar-top {
+        padding: 0 1.5rem 2rem;
+    }
+
+    .wordmark {
+        font-family: var(--echo-font);
+        font-size: 1.05rem;
+        font-weight: 700;
+        letter-spacing: -0.05em;
+        color: var(--echo-text-1);
+    }
+
+    .sidebar-nav {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .nav-item {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        text-align: left;
-        width: 100%;
-        padding: 0.75rem 1rem;
-        border-radius: 8px;
-        font-size: 0.95rem;
-        font-family: var(--font-body);
-        font-weight: 500;
-        transition: all 0.2s ease;
-    }
-
-    .nav-links button.ghost {
+        gap: 0.7rem;
+        padding: 0.6rem 1.25rem 0.6rem 1.375rem;
         background: transparent;
-        color: var(--color-chalk-muted);
-        border: 1px solid transparent;
+        border: none;
+        border-left: 2px solid transparent;
+        border-radius: 0;
+        color: var(--echo-text-3);
+        font-size: 0.825rem;
+        font-weight: 450;
+        cursor: pointer;
+        transition: color 0.15s ease, background 0.15s ease, border-left-color 0.15s ease;
+        width: 100%;
+        text-align: left;
     }
 
-    .nav-links button.ghost:hover {
-        background: rgba(255, 255, 255, 0.05);
-        color: #fff;
-        border-color: rgba(197, 198, 199, 0.05);
+    .nav-item:hover {
+        background: rgba(255 255 255 / 0.04);
+        color: var(--echo-text-2);
+        transform: none; /* override global button active scale */
     }
 
-    .nav-links button.primary {
-        background: rgba(102, 252, 241, 0.1);
-        color: var(--color-cyan);
-        border: 1px solid rgba(102, 252, 241, 0.2);
+    .nav-item:active {
+        transform: none;
     }
 
-    .nav-links button.primary:hover {
-        background: rgba(102, 252, 241, 0.15);
-        color: var(--color-cyan);
-        box-shadow: 0 0 15px rgba(102, 252, 241, 0.15);
+    .nav-item.active {
+        border-left-color: var(--echo-silver);
+        color: var(--echo-text-1);
+        background: rgba(255 255 255 / 0.04);
+    }
+
+    .sidebar-footer {
+        border-top: 1px solid var(--echo-border);
+        padding-top: 0.75rem;
+        margin-top: 0.75rem;
     }
 </style>

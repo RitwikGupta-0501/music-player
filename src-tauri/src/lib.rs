@@ -67,7 +67,7 @@ async fn scan_local_directory(state: State<'_, AppState>, path: String) -> Resul
             if entry_path.is_file() {
                 if let Some(ext) = entry_path.extension().and_then(|s| s.to_str()) {
                     let ext = ext.to_lowercase();
-                    if ext == "mp3" || ext == "flac" || ext == "wav" {
+                    if ext == "mp3" || ext == "flac" || ext == "wav" || ext == "m4a" || ext == "ogg" {
                         let mut title = entry_path.file_name().unwrap_or_default().to_string_lossy().to_string();
                         let mut artist = None;
                         let mut album = None;
@@ -190,6 +190,13 @@ async fn get_setting(state: State<'_, AppState>, key: String) -> Result<Option<S
 async fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
     let (tx, rx) = oneshot::channel();
     state.db_tx.send(DbRequest::SetSetting { key, value, resp: tx }).map_err(|e| e.to_string())?;
+    rx.await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn remove_track_by_path(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    state.db_tx.send(DbRequest::RemoveTrackByPath { path, resp: tx }).map_err(|e| e.to_string())?;
     rx.await.map_err(|e| e.to_string())?
 }
 
@@ -317,6 +324,7 @@ pub fn run() {
             get_setting,
             set_setting,
             factory_reset,
+            remove_track_by_path,
         ]);
 
     builder

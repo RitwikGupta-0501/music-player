@@ -33,6 +33,7 @@ pub enum DbRequest {
     FactoryReset { resp: oneshot::Sender<Result<(), String>> },
     InsertTracks { tracks: Vec<TrackData>, resp: oneshot::Sender<Result<usize, String>> },
     LoadAudioCache { path: String, resp: oneshot::Sender<Result<(), String>> },
+    RemoveTrackByPath { path: String, resp: oneshot::Sender<Result<(), String>> },
     Quit,
 }
 
@@ -90,6 +91,9 @@ pub fn start_db_thread(mut conn: Connection, rx: Receiver<DbRequest>) -> std::th
                 }
                 DbRequest::LoadAudioCache { path, resp } => {
                     let _ = resp.send(queries::load_audio_cache(&conn, &path));
+                }
+                DbRequest::RemoveTrackByPath { path, resp } => {
+                    let _ = resp.send(queries::remove_track_by_path(&conn, &path));
                 }
                 DbRequest::Quit => {
                     break;

@@ -245,3 +245,25 @@ pub fn load_audio_cache(conn: &Connection, path: &str) -> Result<(), String> {
     );
     Ok(())
 }
+
+pub fn remove_track_by_path(conn: &Connection, path: &str) -> Result<(), String> {
+    let album_id: Option<i64> = conn
+        .query_row("SELECT album_id FROM tracks WHERE file_path = ?1", [path], |r| r.get(0))
+        .ok()
+        .flatten();
+
+    conn.execute("DELETE FROM tracks WHERE file_path = ?1", [path])
+        .map_err(|e| e.to_string())?;
+
+    // Remove orphaned album if this was its last track.
+    if let Some(album_id) = album_id {
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tracks WHERE album_id = ?1", [album_id], |r| r.get(0))
+            .unwrap_or(0);
+        if remaining == 0 {
+            let _ = conn.execute("DELETE FROM albums WHERE id = ?1", [album_id]);
+        }
+    }
+
+    Ok(())
+}

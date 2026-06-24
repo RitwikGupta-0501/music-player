@@ -6,9 +6,13 @@ use super::AudioCommand;
 
 #[tauri::command]
 pub async fn load_audio(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    if !std::path::Path::new(&path).exists() {
+        return Err("FILE_NOT_FOUND".to_string());
+    }
+
     let (tx, rx) = oneshot::channel();
     let _ = state.db_tx.send(DbRequest::LoadAudioCache { path: path.clone(), resp: tx });
-    let _ = rx.await; 
+    let _ = rx.await;
 
     if let Ok(tx) = state.audio_tx.lock() {
         let _ = tx.send(AudioCommand::Load(path));

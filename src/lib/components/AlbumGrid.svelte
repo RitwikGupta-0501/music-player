@@ -5,7 +5,7 @@
     import AlbumCard from "./AlbumCard.svelte";
 
     let { onSelectAlbum } = $props<{ onSelectAlbum: (a: Album) => void }>();
-    
+
     let scanDirectory = $state("");
 
     async function handleBrowse() {
@@ -27,57 +27,59 @@
 </script>
 
 {#if libraryStore.albums.length === 0 && !libraryStore.isScanning}
-    <!-- Empty State / Onboarding -->
+    <!-- Empty state / onboarding -->
     <div class="empty-state">
         <div class="empty-icon">
-            <FolderOpen size={64} strokeWidth={1} />
+            <FolderOpen size={48} strokeWidth={1} />
         </div>
-        <h2 style="margin-bottom: 0.5rem;">Your library is empty</h2>
-        <p class="text-muted" style="margin-bottom: 2rem; max-width: 400px; text-align: center;">
-            Add a folder to start your collection.
-        </p>
-        <button class="primary" onclick={handleBrowse}>
-            <FolderOpen size={16} />
+        <h2 class="empty-heading">Your library is empty</h2>
+        <p class="empty-sub">Add a music folder to start your collection.</p>
+        <button class="primary" onclick={handleBrowse} style="margin-top: 1.75rem;">
+            <FolderOpen size={15} />
             Add Music Folder
         </button>
         <div class="manual-scan">
-            <span class="text-muted" style="font-size: 0.8rem;">or enter a path manually:</span>
-            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <span class="or-label">or enter a path directly</span>
+            <div class="path-row">
                 <input
                     type="text"
                     bind:value={scanDirectory}
                     placeholder="/home/user/Music"
                     disabled={libraryStore.isScanning}
                     spellcheck="false"
-                    style="width: 300px;"
                 />
-                <button class="primary" onclick={handleManualScan} disabled={libraryStore.isScanning || !scanDirectory.trim()}>
+                <button
+                    class="primary"
+                    onclick={handleManualScan}
+                    disabled={libraryStore.isScanning || !scanDirectory.trim()}
+                >
                     Scan
                 </button>
             </div>
         </div>
     </div>
+
 {:else}
-    <!-- Library Header -->
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem;">
-        <div>
-            <h2 class="text-cyan" style="font-size: 2.5rem; margin-bottom: 0.5rem;">Library</h2>
-            <span class="text-muted">{libraryStore.albums.length} Albums</span>
+    <!-- Library header -->
+    <header class="lib-header">
+        <div class="lib-heading-group">
+            <h1 class="lib-heading">Library</h1>
+            <span class="lib-count">{libraryStore.albums.length} albums</span>
         </div>
-        
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
+
+        <div class="lib-actions">
             {#if libraryStore.isScanning}
-                <div class="scanning-indicator">
-                    <Loader2 size={16} class="spin" />
-                    <span class="text-muted">Scanning...</span>
+                <div class="scan-status">
+                    <Loader2 size={13} class="spin" />
+                    <span>Scanning</span>
                 </div>
             {/if}
-            <button class="ghost" onclick={handleBrowse} title="Add Music Folder" style="display: flex; align-items: center; gap: 0.5rem;">
-                <FolderOpen size={16} />
+            <button class="ghost" onclick={handleBrowse}>
+                <FolderOpen size={14} />
                 Add Folder
             </button>
         </div>
-    </div>
+    </header>
 
     <div class="album-grid">
         {#each libraryStore.albums as album}
@@ -87,54 +89,116 @@
 {/if}
 
 <style>
-    .album-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 1.5rem;
-    }
-
+    /* ── Empty state ── */
     .empty-state {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        height: 70vh;
+        min-height: 65vh;
+        text-align: center;
         gap: 0.5rem;
     }
 
     .empty-icon {
-        color: var(--color-chalk-muted);
-        opacity: 0.4;
-        margin-bottom: 1rem;
+        color: var(--echo-text-3);
+        margin-bottom: 1.25rem;
+        opacity: 0.6;
     }
 
-    .empty-state button.primary {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.85rem 1.5rem;
-        font-size: 1rem;
+    .empty-heading {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--echo-text-1);
+        letter-spacing: -0.025em;
+    }
+
+    .empty-sub {
+        font-size: 0.875rem;
+        color: var(--echo-text-2);
+        max-width: 280px;
+        line-height: 1.6;
     }
 
     .manual-scan {
-        margin-top: 2rem;
+        margin-top: 2.25rem;
         display: flex;
         flex-direction: column;
         align-items: center;
+        gap: 0.6rem;
     }
 
-    .scanning-indicator {
+    .or-label {
+        font-size: 0.75rem;
+        color: var(--echo-text-3);
+    }
+
+    .path-row {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .path-row input {
+        width: 280px;
+    }
+
+    /* ── Library header ── */
+    .lib-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 2rem;
+    }
+
+    .lib-heading-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .lib-heading {
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+        color: var(--echo-text-1);
+        line-height: 1;
+    }
+
+    .lib-count {
+        font-size: 0.78rem;
+        color: var(--echo-text-3);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .lib-actions {
         display: flex;
         align-items: center;
         gap: 0.5rem;
     }
 
+    .scan-status {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.78rem;
+        color: var(--echo-text-3);
+    }
+
+    /* ── Album grid ── */
+    .album-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+        gap: 1.125rem;
+    }
+
+    /* Spinner keyframe */
     :global(.spin) {
-        animation: spin 1s linear infinite;
+        animation: spin 1.2s linear infinite;
     }
 
     @keyframes spin {
         from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
+        to   { transform: rotate(360deg); }
     }
 </style>
