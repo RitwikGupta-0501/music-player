@@ -31,7 +31,7 @@ export class LibraryStore {
 
     async fetchAlbums() {
         try {
-            this.albums = await invoke("get_albums");
+            this.albums = await invoke("get_albums", { limit: 500, offset: 0 });
         } catch (e) {
             console.error(e);
         }
@@ -39,7 +39,7 @@ export class LibraryStore {
 
     async fetchPlaylists() {
         try {
-            this.playlists = await invoke("get_playlists");
+            this.playlists = await invoke("get_playlists", { limit: 500, offset: 0 });
         } catch (e) {
             console.error(e);
         }
@@ -63,11 +63,11 @@ export class LibraryStore {
     }
 
     async getAlbumTracks(albumId: number): Promise<LocalTrack[]> {
-        return await invoke("get_album_tracks", { albumId });
+        return await invoke("get_album_tracks", { albumId, limit: 500, offset: 0 });
     }
 
     async getPlaylistTracks(playlistId: number): Promise<LocalTrack[]> {
-        return await invoke("get_playlist_tracks", { playlistId });
+        return await invoke("get_playlist_tracks", { playlistId, limit: 500, offset: 0 });
     }
     
     async createPlaylist(name: string) {

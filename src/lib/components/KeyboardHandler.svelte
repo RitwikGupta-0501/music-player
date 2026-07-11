@@ -1,9 +1,8 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { audioStore } from "$lib/stores/audio.svelte";
     import { DEFAULT_KEYMAP, matchesBinding, type KeyAction } from "$lib/stores/keymap";
 
-    onMount(() => {
+    $effect(() => {
         function handleKeydown(e: KeyboardEvent) {
             // Don't intercept when user is typing in an input/textarea
             const target = e.target as HTMLElement;

@@ -1,4 +1,4 @@
-# Echo Music Player - Project Context & Governance (Gemini Edition)
+# Echo Music Player - Project Context & Governance
 
 ## System Intent & AI Directives
 **Identity:** Echo is a minimal, algorithmically-driven local audio player (FLAC/MP3/WAV). 
@@ -39,15 +39,10 @@
 ### OS Integration
 * **Desktop Media Controls:** Ensure integration with native OS media controls (MPRIS on Linux, SMTC on Windows, NowPlaying on macOS) using crates like `souvlaki`.
 
-## Gemini-Specific Agent Instructions
-- **Tool Usage Strategy:** When modifying code, always prioritize structural replacement tools (`replace_file_content` / `multi_replace_file_content`) over rewriting full files. This respects the speed and token efficiency required for system-level engineering.
-- **Bash Autonomy:** Proactively use the terminal tools to run the footprint checks (`cargo bloat` / `cargo size`) and backend linters after modifying Rust files to ensure memory budgets are respected.
-- **Knowledge Item (KI) Primacy:** Always check the agent's internal Knowledge Items for established templates and architectural patterns before generating net-new implementations.
-
 ## Repository & Git Discipline
 - Maintain complete commit cleanliness. Always squash feature branches before merging.
 - Every commit generated must include proper attribution trailers:
-  `Co-authored-by: Gemini <noreply@google.com>`
+  `Co-authored-by: Claude <noreply@anthropic.com>`
 
 ## Protected Directories (DO NOT EDIT)
 - Auto-generated IPC state bindings or bridge interfaces.

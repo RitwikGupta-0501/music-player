@@ -1,115 +1,224 @@
 <script lang="ts">
     import { audioStore } from "$lib/stores/audio.svelte";
-    import { X, Trash2 } from "lucide-svelte";
-    import { fly, fade } from "svelte/transition";
-
+    // @ts-ignore - svelte-virtual-list lacks type definitions
+    import VirtualList from "svelte-virtual-list";
+    import { X, Trash, Pause, Play } from "phosphor-svelte";
     let { open = $bindable(false) } = $props<{ open?: boolean }>();
 
-    function jumpToTrack(index: number) {
-        audioStore.queueIndex = index;
-        audioStore.load(audioStore.queue[index].file_path);
+    let draggedIndex = -1;
+    let dragoverIndex = $state(-1);
+    let justReorderedIndex = $state(-1);
+    let isLoading = $state(false);
+
+    let queueWithIndex = $derived(
+        audioStore.queue.map((track, i) => ({ track, index: i }))
+    );
+
+    function jumpToTrack(instanceId: string) {
+        audioStore.jumpToTrack(instanceId);
     }
 
-    function isCurrentTrack(index: number): boolean {
-        return index === audioStore.queueIndex;
+    async function handleDragStart(e: DragEvent, index: number) {
+        draggedIndex = index;
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            const track = audioStore.queue[index];
+            const dragImage = createDragPreview(track.title);
+            e.dataTransfer.setDragImage(dragImage, 0, 0);
+        }
+    }
+
+    async function handleDrop(e: DragEvent, targetIndex: number) {
+        e.preventDefault();
+        dragoverIndex = -1;
+
+        if (draggedIndex !== -1 && draggedIndex !== targetIndex) {
+            isLoading = true;
+            try {
+                await audioStore.reorderQueue(draggedIndex, targetIndex);
+                justReorderedIndex = targetIndex;
+                setTimeout(() => {
+                    justReorderedIndex = -1;
+                }, 300);
+            } catch (error) {
+                console.error("Reorder failed:", error);
+            } finally {
+                isLoading = false;
+            }
+        }
+        draggedIndex = -1;
+    }
+
+    function handleDragOver(e: DragEvent, index: number) {
+        e.preventDefault();
+        dragoverIndex = index;
+        if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = "move";
+        }
+    }
+
+    function handleDragLeave() {
+        dragoverIndex = -1;
+    }
+
+    function createDragPreview(title: string): HTMLElement {
+        const div = document.createElement("div");
+        div.style.position = "absolute";
+        div.style.top = "-9999px";
+        div.style.left = "-9999px";
+        div.style.background = "rgba(255, 255, 255, 0.1)";
+        div.style.border = "1px solid rgba(255, 255, 255, 0.2)";
+        div.style.borderRadius = "6px";
+        div.style.padding = "0.6rem 1rem";
+        div.style.fontSize = "0.8rem";
+        div.style.color = "rgb(200, 200, 200)";
+        div.style.whiteSpace = "nowrap";
+        div.textContent = title;
+        document.body.appendChild(div);
+        setTimeout(() => document.body.removeChild(div), 0);
+        return div;
+    }
+
+    async function handleClearQueue() {
+        if (confirm("Clear entire queue?")) {
+            isLoading = true;
+            try {
+                await audioStore.clearQueue();
+            } finally {
+                isLoading = false;
+            }
+        }
     }
 </script>
 
 {#if open}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="queue-backdrop" transition:fade={{ duration: 200 }} onclick={() => open = false}></div>
-    <aside class="queue-sidebar" transition:fly={{ x: 350, duration: 250 }}>
+    <div class="queue-view">
         <div class="queue-header">
-            <h3>Queue</h3>
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <span class="queue-title">Up Next</span>
+            <div class="header-actions">
                 {#if audioStore.queue.length > 0}
-                    <button class="ghost icon-btn" onclick={() => audioStore.clearQueue()} title="Clear Queue">
-                        <Trash2 size={16} />
+                    <button
+                        class="icon-btn"
+                        onclick={handleClearQueue}
+                        disabled={isLoading}
+                        title="Clear queue"
+                    >
+                        <Trash size={16} weight="bold" />
                     </button>
                 {/if}
-                <button class="ghost icon-btn" onclick={() => open = false} title="Close">
-                    <X size={18} />
-                </button>
             </div>
         </div>
 
         {#if audioStore.queue.length === 0}
             <div class="queue-empty">
-                <p class="text-muted">No tracks in queue.</p>
-                <p class="text-muted" style="font-size: 0.8rem; margin-top: 0.5rem;">
-                    Play an album or playlist to populate the queue.
-                </p>
+                <p class="empty-label">Queue is empty</p>
+                <p class="empty-hint">Play an album or playlist to populate it.</p>
             </div>
         {:else}
-            <div class="queue-list">
-                {#each audioStore.queue as track, i}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div 
-                        class="queue-item" 
-                        class:active={isCurrentTrack(i)}
-                        onclick={() => jumpToTrack(i)}
-                    >
-                        <div class="queue-item-left">
-                            <span class="queue-num">{i + 1}</span>
-                            <div class="queue-item-info">
-                                <span class="queue-item-title">{track.title}</span>
-                                <span class="queue-item-artist text-muted">{track.artist || "Unknown Artist"}</span>
-                            </div>
-                        </div>
+            <VirtualList items={queueWithIndex} let:item={row}>
+                {@const track = row.track}
+                {@const i = row.index}
+                {@const isPlaying = track.instanceId === audioStore.currentQueueId}
+
+                <div
+                    class="queue-row"
+                    class:playing={isPlaying}
+                    class:drag-over={dragoverIndex === i}
+                    class:just-reordered={justReorderedIndex === i}
+                    role="button"
+                    tabindex="0"
+                    draggable="true"
+                    ondragstart={(e) => handleDragStart(e, i)}
+                    ondragover={(e) => handleDragOver(e, i)}
+                    ondragleave={handleDragLeave}
+                    ondrop={(e) => handleDrop(e, i)}
+                    ondragend={() => {
+                        dragoverIndex = -1;
+                        draggedIndex = -1;
+                    }}
+                    onclick={() => jumpToTrack(track.instanceId)}
+                    onkeydown={(e) => e.key === 'Enter' && jumpToTrack(track.instanceId)}
+                >
+                    <span class="row-num">
+                        {#if isPlaying}
+                            <span class="playing-indicator">
+                                {#if audioStore.playbackState === "Playing"}
+                                    <Pause size={20} weight="fill" color="#b58e62" />
+                                {:else}
+                                    <Play size={20} weight="fill" color="#b58e62" />
+                                {/if}
+                            </span>
+                        {:else}
+                            {i + 1}
+                        {/if}
+                    </span>
+                    <div class="row-info">
+                        <span class="row-title">{track.title}</span>
+                        <span class="row-artist">{track.artist || "Unknown"}</span>
                     </div>
-                {/each}
-            </div>
+                </div>
+            </VirtualList>
         {/if}
-    </aside>
+    </div>
 {/if}
 
 <style>
-    .queue-backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.3);
-        z-index: 40;
-    }
-
-    .queue-sidebar {
-        position: fixed;
-        top: 0;
-        right: 0;
-        width: 350px;
-        height: calc(100vh - 100px); /* Stop above PlayerBar */
-        background: rgba(11, 12, 16, 0.92);
-        backdrop-filter: blur(24px);
-        -webkit-backdrop-filter: blur(24px);
-        border-left: 1px solid var(--glass-border);
-        z-index: 50;
+    .queue-view {
         display: flex;
         flex-direction: column;
+        height: 100%;
+        width: 100%;
+        padding-bottom: 5rem; /* Allow space for player bar */
     }
 
     .queue-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1.5rem;
-        border-bottom: 1px solid var(--glass-border);
+        padding: 1.25rem;
+        border-bottom: 1px solid var(--echo-border);
         flex-shrink: 0;
     }
 
-    .queue-header h3 {
-        font-family: var(--font-display);
+    .queue-title {
+        font-size: 0.8rem;
         font-weight: 600;
-        color: #fff;
-        margin: 0;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--echo-text-2);
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 4px;
+        align-items: center;
     }
 
     .icon-btn {
-        padding: 0.35rem;
+        background: transparent;
+        border: none;
+        color: var(--echo-text-3);
+        padding: 0.3rem;
         border-radius: 6px;
+        cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
+        transition: all 0.12s ease;
+    }
+
+    .icon-btn:hover:not(:disabled) {
+        color: var(--echo-text-1);
+        background: rgba(255 255 255 / 0.07);
+    }
+
+    .icon-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .icon-btn:active:not(:disabled) {
+        transform: scale(0.94);
     }
 
     .queue-empty {
@@ -118,80 +227,116 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 0.4rem;
         padding: 2rem;
         text-align: center;
     }
 
-    .queue-list {
+    .empty-label {
+        font-size: 0.85rem;
+        color: var(--echo-text-2);
+        font-weight: 500;
+    }
+
+    .empty-hint {
+        font-size: 0.75rem;
+        color: var(--echo-text-3);
+        max-width: 200px;
+        line-height: 1.5;
+    }
+
+    :global(.virtual-list-container) {
         flex: 1;
         overflow-y: auto;
-        padding: 0.5rem 0;
+        padding: 0.375rem 0;
     }
 
-    .queue-item {
+    .queue-row {
+        position: relative;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 0.6rem 1.5rem;
+        gap: 0.85rem;
+        padding: 0.6rem 1.25rem;
         cursor: pointer;
-        transition: background 0.15s;
-        border-left: 3px solid transparent;
+        transition: background 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+        user-select: none;
     }
 
-    .queue-item:hover {
-        background: rgba(255, 255, 255, 0.05);
+    .queue-row:hover {
+        background: rgba(255 255 255 / 0.04);
     }
 
-    .queue-item.active {
-        background: rgba(102, 252, 241, 0.08);
-        border-left-color: var(--color-cyan);
+    .queue-row.drag-over {
+        border-top: 2px solid var(--echo-accent);
+        background: rgba(255 255 255 / 0.05);
     }
 
-    .queue-item-left {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
+    .queue-row.playing {
+        background: rgba(255 255 255 / 0.04);
+    }
+
+    .queue-row[draggable="true"]:active {
+        opacity: 0.6;
+        transform: scale(0.98);
+    }
+
+    .queue-row.just-reordered {
+        background: rgba(255, 255, 255, 0.08);
+        animation: pulse-highlight 0.3s ease-out;
+    }
+
+    @keyframes pulse-highlight {
+        0% {
+            background: rgba(255, 255, 255, 0.12);
+            transform: scale(1);
+        }
+        50% {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        100% {
+            background: rgba(255, 255, 255, 0.04);
+            transform: scale(1);
+        }
+    }
+
+    .row-num {
+        font-size: 0.72rem;
+        color: var(--echo-text-3);
+        width: 24px;
+        text-align: center;
+        flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .playing-indicator {
+        color: var(--echo-silver);
+        font-weight: bold;
+    }
+
+    .row-info {
         min-width: 0;
         flex: 1;
-    }
-
-    .now-indicator {
-        color: var(--color-cyan);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 20px;
-        flex-shrink: 0;
-    }
-
-    .queue-num {
-        color: var(--color-chalk-muted);
-        font-size: 0.8rem;
-        width: 20px;
-        text-align: right;
-        flex-shrink: 0;
-    }
-
-    .queue-item-info {
         display: flex;
         flex-direction: column;
-        min-width: 0;
+        gap: 2px;
     }
 
-    .queue-item-title {
-        font-size: 0.9rem;
-        color: #fff;
+    .row-title {
+        font-size: 0.8rem;
+        font-weight: 450;
+        color: var(--echo-text-1);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    .queue-item.active .queue-item-title {
-        color: var(--color-cyan);
+    .queue-row.playing .row-title {
+        color: var(--echo-silver);
     }
 
-    .queue-item-artist {
-        font-size: 0.8rem;
+    .row-artist {
+        font-size: 0.7rem;
+        color: var(--echo-text-3);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;

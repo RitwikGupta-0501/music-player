@@ -8,87 +8,127 @@ interface PlayerSyncPayload {
     track: string;
 }
 
+interface QueueChangePayload {
+    tracks: QueueTrack[];
+    current_position: number;
+    current_track: QueueTrack | null;
+    repeat_mode: string;
+    queue_mode: string;
+}
+
 export interface QueueTrack {
-    id: number;
+    instanceId: string;
+    track_id?: number;  // Optional for compatibility
+    id?: number;         // Alias for track_id
     title: string;
     artist: string | null;
     file_path: string;
+    album_id?: number | null;
+    track_number?: number | null;
 }
 
 export class AudioStore {
-    // ── Playback State ──
+    // ══════════════════════════════════════════
+    // PLAYBACK STATE (NOT cached from backend)
+    // ══════════════════════════════════════════
+
     playbackState = $state("Stopped");
     currentTrack = $state("None");
     currentTime = $state(0);
     duration = $state(0);
-
-    // ── Queue State ──
-    queue = $state<QueueTrack[]>([]);
-    queueIndex = $state(-1);
-
-    // ── Shuffle & Repeat ──
-    shuffleEnabled = $state(false);
-    repeatMode = $state<'off' | 'all' | 'one'>('off');
-
-    // ── Volume & Mute ──
     volume = $state(1.0);
     isMuted = $state(false);
 
-    // Internal: shuffle order maps visual index → actual queue index
-    private _shuffleOrder: number[] = [];
-    // Internal: history of played indices for "previous" while shuffled
-    private _shuffleHistory: number[] = [];
+    // ══════════════════════════════════════════
+    // QUEUE STATE (Cached from backend events)
+    // ══════════════════════════════════════════
 
-    // ── Interpolation internals ──
+    queue = $state<QueueTrack[]>([]);
+    currentPosition = $state(0);
+    currentQueueId = $state<string | null>(null);
+    repeatMode = $state("Off");
+    shuffleEnabled = $state(false);
+
+    // ══════════════════════════════════════════
+    // INTERNAL: Interpolation for smooth playback
+    // ══════════════════════════════════════════
+
     private _syncPosition = 0;
     private _syncTimestamp = 0;
     private _isPlaying = false;
     private _rafId: number | null = null;
     private _autoAdvancing = false;
-    
-    private unlistenSync: UnlistenFn | null = null;
 
-    // ── Derived ──
-    get currentQueueTrack(): QueueTrack | null {
-        if (this.queueIndex >= 0 && this.queueIndex < this.queue.length) {
-            return this.queue[this.queueIndex];
-        }
-        return null;
-    }
+    private unlistenSync: UnlistenFn | null = null;
+    private unlistenTrackEnded: UnlistenFn | null = null;
+    private unlistenQueueChanged: UnlistenFn | null = null;
+    private _volumeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
     // ══════════════════════════════════════════
-    //  LIFECYCLE
+    // DERIVED STATE
+    // ══════════════════════════════════════════
+
+    currentQueueTrack = $derived(
+        this.currentQueueId
+            ? this.queue.find((t) => t.instanceId === this.currentQueueId) || null
+            : null
+    );
+
+    // ══════════════════════════════════════════
+    // LIFECYCLE
     // ══════════════════════════════════════════
 
     async init() {
+        // Listen to playback sync events (backend → frontend)
         this.unlistenSync = await listen<PlayerSyncPayload>("player-sync", (e) => {
             const payload = e.payload;
-            
+
             this._syncPosition = payload.position;
             this._syncTimestamp = performance.now();
             this._isPlaying = payload.state === "Playing";
-            
+
             this.playbackState = payload.state;
             this.duration = payload.duration;
             this.currentTrack = payload.track || "None";
             this.currentTime = payload.position;
-            
+
             if (payload.state === "Stopped") {
                 this.currentTime = 0;
                 this.duration = 0;
             }
         });
 
-        this.startClock();
+        // Listen to queue changes from backend
+        this.unlistenQueueChanged = await listen<QueueChangePayload>(
+            "queue-changed",
+            (e) => {
+                const payload = e.payload;
+                this.queue = payload.tracks;
+                this.currentPosition = payload.current_position;
+                this.currentQueueId = payload.current_track?.instanceId || null;
+                this.repeatMode = payload.repeat_mode;
+                this.shuffleEnabled = payload.queue_mode === "Shuffle";
+            }
+        );
 
-        // Load volume and mute settings from DB
+        // Track end detection
+        this.unlistenTrackEnded = await listen("track-ended", () => {
+            this._autoAdvancing = true;
+            this.skipForward(1);
+        });
+
+        // Load persisted settings
         try {
-            const persistedVolume = await invoke<string | null>("get_setting", { key: "volume" });
+            const persistedVolume = await invoke<string | null>("get_setting", {
+                key: "volume",
+            });
             if (persistedVolume !== null) {
                 this.volume = parseFloat(persistedVolume);
                 await invoke("set_volume", { volume: this.volume });
             }
-            const persistedMute = await invoke<string | null>("get_setting", { key: "mute" });
+            const persistedMute = await invoke<string | null>("get_setting", {
+                key: "mute",
+            });
             if (persistedMute !== null) {
                 this.isMuted = persistedMute === "true";
                 await invoke("set_mute", { mute: this.isMuted });
@@ -96,29 +136,32 @@ export class AudioStore {
         } catch (e) {
             console.error("Failed to load settings:", e);
         }
+
+        try {
+            await invoke("sync_playback_state");
+        } catch (e) {
+            console.error("Failed to sync playback state on boot:", e);
+        }
+
+        this.startClock();
     }
 
     destroy() {
         if (this.unlistenSync) this.unlistenSync();
+        if (this.unlistenTrackEnded) this.unlistenTrackEnded();
+        if (this.unlistenQueueChanged) this.unlistenQueueChanged();
         this.stopClock();
+        if (this._volumeSaveTimer) clearTimeout(this._volumeSaveTimer);
     }
 
     // ══════════════════════════════════════════
-    //  INTERPOLATION CLOCK
+    // PLAYBACK CLOCK (60fps interpolation)
     // ══════════════════════════════════════════
 
-    /** 60fps visual clock — runs locally, zero IPC */
     private tick = () => {
         if (this._isPlaying && this.duration > 0) {
             const elapsed = (performance.now() - this._syncTimestamp) / 1000;
             this.currentTime = Math.min(this._syncPosition + elapsed, this.duration);
-            
-            // Auto-advance when track ends (with 0.3s threshold to avoid premature trigger)
-            if (this.currentTime >= this.duration - 0.3 && !this._autoAdvancing) {
-                this._autoAdvancing = true;
-                this._isPlaying = false;
-                this.next();
-            }
         }
         this._rafId = requestAnimationFrame(this.tick);
     };
@@ -137,220 +180,247 @@ export class AudioStore {
     }
 
     // ══════════════════════════════════════════
-    //  BASIC TRANSPORT
+    // PLAYBACK COMMANDS
     // ══════════════════════════════════════════
 
-    async load(path: string) {
-        this._autoAdvancing = false;
-        await invoke("load_audio", { path });
-    }
-
     async play() {
-        await invoke("play_audio");
+        try {
+            await invoke("play_audio");
+        } catch (e) {
+            console.error("Play failed:", e);
+        }
     }
 
     async pause() {
-        await invoke("pause_audio");
+        try {
+            await invoke("pause_audio");
+        } catch (e) {
+            console.error("Pause failed:", e);
+        }
     }
 
     async stop() {
-        await invoke("stop_audio");
+        try {
+            await invoke("stop_audio");
+        } catch (e) {
+            console.error("Stop failed:", e);
+        }
     }
 
-    // ══════════════════════════════════════════
-    //  SEEK
-    // ══════════════════════════════════════════
-
     async seek(position: number) {
-        // Clamp to valid range
         position = Math.max(0, Math.min(position, this.duration));
-        
-        // Immediately snap the interpolation anchor so UI feels instant
+
         this._syncPosition = position;
         this._syncTimestamp = performance.now();
         this.currentTime = position;
-        
-        await invoke("seek_audio", { position });
-    }
 
-    // ══════════════════════════════════════════
-    //  QUEUE MANAGEMENT
-    // ══════════════════════════════════════════
-
-    /** Replace the queue and start playing at startIndex */
-    async setQueue(tracks: QueueTrack[], startIndex: number = 0) {
-        this.queue = tracks;
-        this.queueIndex = startIndex;
-        this._shuffleHistory = [startIndex];
-        
-        // If shuffle is on, regenerate the order
-        if (this.shuffleEnabled) {
-            this.generateShuffleOrder();
-        }
-
-        if (tracks.length > 0 && startIndex < tracks.length) {
-            await this.load(tracks[startIndex].file_path);
-        }
-    }
-
-    /** Append a track to the end of the queue */
-    addToQueue(track: QueueTrack) {
-        this.queue = [...this.queue, track];
-        // If shuffle is on, add the new index to the shuffle order
-        if (this.shuffleEnabled) {
-            this._shuffleOrder.push(this.queue.length - 1);
-        }
-    }
-
-    /** Clear the queue and stop */
-    async clearQueue() {
-        this.queue = [];
-        this.queueIndex = -1;
-        this._shuffleOrder = [];
-        this._shuffleHistory = [];
-        await this.stop();
-    }
-
-    // ══════════════════════════════════════════
-    //  SKIP: NEXT / PREVIOUS
-    // ══════════════════════════════════════════
-
-    async next() {
-        if (this.queue.length === 0) return;
-
-        // Repeat One: re-seek to 0 (but only on auto-advance, not manual skip)
-        // Manual next() should always advance, so we check _autoAdvancing
-        if (this.repeatMode === 'one' && this._autoAdvancing) {
-            this._autoAdvancing = false;
-            await this.seek(0);
-            await this.play();
-            return;
-        }
-        this._autoAdvancing = false;
-
-        let nextIndex: number;
-
-        if (this.shuffleEnabled) {
-            // Find current position in shuffle order and advance
-            const shufflePos = this._shuffleOrder.indexOf(this.queueIndex);
-            const nextShufflePos = shufflePos + 1;
-
-            if (nextShufflePos >= this._shuffleOrder.length) {
-                // End of shuffle order
-                if (this.repeatMode === 'all') {
-                    this.generateShuffleOrder(); // reshuffle for next cycle
-                    nextIndex = this._shuffleOrder[0];
-                } else {
-                    await this.stop();
-                    return;
-                }
-            } else {
-                nextIndex = this._shuffleOrder[nextShufflePos];
-            }
-        } else {
-            nextIndex = this.queueIndex + 1;
-            if (nextIndex >= this.queue.length) {
-                if (this.repeatMode === 'all') {
-                    nextIndex = 0;
-                } else {
-                    await this.stop();
-                    return;
-                }
-            }
-        }
-
-        this._shuffleHistory.push(nextIndex);
-        this.queueIndex = nextIndex;
-        await this.load(this.queue[nextIndex].file_path);
-    }
-
-    async previous() {
-        if (this.queue.length === 0) return;
-
-        // If more than 3 seconds in, restart the current track
-        if (this.currentTime > 3) {
-            await this.seek(0);
-            return;
-        }
-
-        if (this.shuffleEnabled && this._shuffleHistory.length > 1) {
-            // Pop current, go to previous in history
-            this._shuffleHistory.pop();
-            const prevIndex = this._shuffleHistory[this._shuffleHistory.length - 1];
-            this.queueIndex = prevIndex;
-            await this.load(this.queue[prevIndex].file_path);
-        } else if (!this.shuffleEnabled && this.queueIndex > 0) {
-            this.queueIndex--;
-            await this.load(this.queue[this.queueIndex].file_path);
-        } else {
-            // At the start of the queue, just restart
-            await this.seek(0);
+        try {
+            await invoke("seek_audio", { position });
+        } catch (e) {
+            console.error("Seek failed:", e);
         }
     }
 
     // ══════════════════════════════════════════
-    //  SHUFFLE
-    // ══════════════════════════════════════════
-
-    toggleShuffle() {
-        this.shuffleEnabled = !this.shuffleEnabled;
-        if (this.shuffleEnabled) {
-            this.generateShuffleOrder();
-        } else {
-            this._shuffleOrder = [];
-        }
-    }
-
-    /** Fisher-Yates shuffle. Current track goes to position 0 so it stays "now playing". */
-    private generateShuffleOrder() {
-        const indices = Array.from({ length: this.queue.length }, (_, i) => i);
-        
-        // Remove current index from the pool
-        const currentIdx = this.queueIndex >= 0 ? this.queueIndex : 0;
-        const filtered = indices.filter(i => i !== currentIdx);
-        
-        // Fisher-Yates
-        for (let i = filtered.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [filtered[i], filtered[j]] = [filtered[j], filtered[i]];
-        }
-        
-        // Current track goes first
-        this._shuffleOrder = [currentIdx, ...filtered];
-    }
-
-    // ══════════════════════════════════════════
-    //  REPEAT
-    // ══════════════════════════════════════════
-
-    cycleRepeat() {
-        if (this.repeatMode === 'off') this.repeatMode = 'all';
-        else if (this.repeatMode === 'all') this.repeatMode = 'one';
-        else this.repeatMode = 'off';
-    }
-
-    // ══════════════════════════════════════════
-    //  VOLUME CONTROL
+    // VOLUME COMMANDS
     // ══════════════════════════════════════════
 
     async setVolume(volume: number) {
-        this.volume = Math.max(0, Math.min(volume, 1));
-        await invoke("set_volume", { volume: this.volume });
+        this.volume = Math.max(0, Math.min(1, volume));
+
+        if (this._volumeSaveTimer) clearTimeout(this._volumeSaveTimer);
+        this._volumeSaveTimer = setTimeout(async () => {
+            try {
+                await invoke("set_setting", {
+                    key: "volume",
+                    value: this.volume.toString(),
+                });
+            } catch (e) {
+                console.error("Failed to save volume:", e);
+            }
+        }, 500);
+
         try {
-            await invoke("set_setting", { key: "volume", value: this.volume.toString() });
+            await invoke("set_volume", { volume: this.volume });
         } catch (e) {
-            console.error(e);
+            console.error("Set volume failed:", e);
         }
     }
 
-    async toggleMute() {
-        this.isMuted = !this.isMuted;
-        await invoke("set_mute", { mute: this.isMuted });
+    async setMute(mute: boolean) {
+        this.isMuted = mute;
+
         try {
-            await invoke("set_setting", { key: "mute", value: this.isMuted.toString() });
+            await invoke("set_setting", { key: "mute", value: mute.toString() });
+            await invoke("set_mute", { mute });
         } catch (e) {
-            console.error(e);
+            console.error("Set mute failed:", e);
         }
+    }
+
+    // ══════════════════════════════════════════
+    // QUEUE COMMANDS (All via backend)
+    // ══════════════════════════════════════════
+
+    async setQueue(tracks: any[], startIndex: number = 0) {
+        try {
+            // Map frontend snake_case to backend camelCase
+            const tracksWithIds = tracks.map((t) => ({
+                instanceId: crypto.randomUUID(),
+                trackId: t.id ?? t.track_id ?? t.trackId,
+                title: t.title,
+                artist: t.artist,
+                filePath: t.file_path ?? t.filePath,
+                albumId: t.album_id ?? t.albumId,
+                trackNumber: t.track_number ?? t.trackNumber,
+            }));
+            await invoke("set_queue", { tracks: tracksWithIds, startIndex });
+
+            // Load the first track
+            if (tracksWithIds.length > startIndex) {
+                const t = tracksWithIds[startIndex];
+                await invoke("load_audio", { 
+                    path: t.filePath,
+                    title: t.title,
+                    artist: t.artist || null,
+                    album: null 
+                });
+            }
+        } catch (e) {
+            console.error("Set queue failed:", e);
+        }
+    }
+
+    async addToQueue(track: any) {
+        try {
+            const trackWithId = { 
+                instanceId: crypto.randomUUID(),
+                trackId: track.id ?? track.track_id ?? track.trackId,
+                title: track.title,
+                artist: track.artist,
+                filePath: track.file_path ?? track.filePath,
+                albumId: track.album_id ?? track.albumId,
+                trackNumber: track.track_number ?? track.trackNumber,
+            };
+            await invoke("add_to_queue", { track: trackWithId });
+        } catch (e) {
+            console.error("Add to queue failed:", e);
+        }
+    }
+
+    async clearQueue() {
+        try {
+            await invoke("clear_queue");
+        } catch (e) {
+            console.error("Clear queue failed:", e);
+        }
+    }
+
+    async skipForward(count: number = 1) {
+        try {
+            const event = await invoke<QueueChangePayload>("skip_forward", { count });
+            if (event.current_track) {
+                const t = event.current_track;
+                await invoke("load_audio", { 
+                    path: t.file_path,
+                    title: t.title,
+                    artist: t.artist || null,
+                    album: null
+                });
+            }
+        } catch (e) {
+            console.error("Skip forward failed:", e);
+        }
+    }
+
+    async skipBackward(count: number = 1) {
+        try {
+            const event = await invoke<QueueChangePayload>("skip_backward", { count });
+            if (event.current_track) {
+                const t = event.current_track;
+                await invoke("load_audio", { 
+                    path: t.file_path,
+                    title: t.title,
+                    artist: t.artist || null,
+                    album: null
+                });
+            }
+        } catch (e) {
+            console.error("Skip backward failed:", e);
+        }
+    }
+
+    async jumpToTrack(instanceId: string) {
+        try {
+            const event = await invoke<QueueChangePayload>("jump_to_track", {
+                instanceId,
+            });
+            if (event.current_track) {
+                const t = event.current_track;
+                await invoke("load_audio", { 
+                    path: t.file_path,
+                    title: t.title,
+                    artist: t.artist || null,
+                    album: null
+                });
+            }
+        } catch (e) {
+            console.error("Jump to track failed:", e);
+        }
+    }
+
+    async reorderQueue(fromIndex: number, toIndex: number) {
+        try {
+            await invoke("reorder_queue", {
+                fromIndex,
+                toIndex,
+            });
+        } catch (e) {
+            console.error("Reorder queue failed:", e);
+        }
+    }
+
+    async setRepeatMode(mode: "Off" | "All" | "One") {
+        try {
+            await invoke("set_repeat_mode", { mode });
+        } catch (e) {
+            console.error("Set repeat mode failed:", e);
+        }
+    }
+
+    async setShuffle(enabled: boolean) {
+        try {
+            await invoke("set_shuffle", { enabled });
+        } catch (e) {
+            console.error("Set shuffle failed:", e);
+        }
+    }
+
+    // ══════════════════════════════════════════
+    // HELPER METHODS (for UI convenience)
+    // ══════════════════════════════════════════
+
+    async toggleShuffle() {
+        await this.setShuffle(!this.shuffleEnabled);
+    }
+
+    async toggleMute() {
+        await this.setMute(!this.isMuted);
+    }
+
+    async cycleRepeat() {
+        const modes: ("Off" | "All" | "One")[] = ["Off", "All", "One"];
+        const currentIndex = modes.indexOf(this.repeatMode as "Off" | "All" | "One");
+        const nextMode = modes[(currentIndex + 1) % modes.length];
+        await this.setRepeatMode(nextMode);
+    }
+
+    async next() {
+        await this.skipForward(1);
+    }
+
+    async previous() {
+        await this.skipBackward(1);
     }
 }
 

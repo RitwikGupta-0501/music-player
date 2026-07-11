@@ -1,6 +1,6 @@
 <script lang="ts">
     import { toastStore } from "$lib/stores/toast.svelte";
-    import { X } from "lucide-svelte";
+    import { X } from "phosphor-svelte";
 </script>
 
 {#if toastStore.toasts.length > 0}
@@ -9,7 +9,7 @@
             <div class="toast toast-{toast.type}" role="alert">
                 <span class="toast-message">{toast.message}</span>
                 <button class="toast-dismiss" onclick={() => toastStore.dismiss(toast.id)} aria-label="Dismiss">
-                    <X size={14} />
+                    <X size={16} weight="bold" />
                 </button>
             </div>
         {/each}

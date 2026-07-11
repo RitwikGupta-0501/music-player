@@ -17,16 +17,31 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3.8"
+
+[[bench]]
+name = "queue_performance"
+harness = false
+
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rodio = "0.19.0"
-tokio = { version = "1.52.1", features = ["full"] }
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "macros", "sync"] }
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 mlua = { version = "0.11.6", features = ["lua54", "vendored", "async", "serialize", "send"] }
-reqwest = { version = "0.13.3", features = ["json"] }
+reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls"] }
 walkdir = "2.5.0"
-id3 = "1.16.4"
+symphonia = { version = "0.5", features = ["mp3", "flac", "wav", "isomp4", "ogg", "aac", "alac", "vorbis", "pcm"] }
+rand = "0.8"
+log = "0.4"
+env_logger = "0.11"
+lazy_static = "1.4"
+ringbuf = "0.3"
+souvlaki = "0.7.3"
+regex = "1.10"

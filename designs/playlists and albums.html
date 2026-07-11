@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Sonic Topography - Ecosystem</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com" rel="preconnect">
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+    <link
+        href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&family=Outfit:wght@100..900&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet">
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-container": "#e2a973",
+                        "background-dark": "#050507",
+                        "text-main": "#EAE8E3",
+                        "muted": "#7A7885",
+                        "pill-bg": "#1A1A1A",
+                    },
+                    fontFamily: {
+                        "headline-lg": ["EB Garamond"],
+                        "body-main": ["Outfit"],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #050507;
+            background-image:
+                radial-gradient(circle at 50% 50%, rgba(99, 159, 171, 0.05) 0%, transparent 60%),
+                radial-gradient(circle at 80% 20%, rgba(226, 169, 115, 0.03) 0%, transparent 40%);
+        }
+
+        /* --- Scrollbar --- */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* --- Animations & Utilities --- */
+        .glass-panel {
+            background-color: rgba(25, 25, 32, 0.25);
+            backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Smooth transitions for the entire grid ecosystem */
+        .smooth-layout {
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), padding 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .grid-item-smooth {
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .track-row {
+            transition: all 0.2s ease;
+        }
+
+        .track-row:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        .track-number {
+            display: block;
+        }
+
+        .track-play-icon {
+            display: none;
+            color: #B58E62;
+        }
+
+        .track-row:hover .track-number {
+            display: none;
+        }
+
+        .track-row:hover .track-play-icon {
+            display: block;
+        }
+
+        /* --- Player Pill Ecosystem --- */
+        #player-pill {
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.4s ease;
+        }
+
+        #player-pill[data-state="idle"] {
+            width: 340px;
+        }
+
+        #player-pill[data-state="playing"],
+        #player-pill[data-state="paused"] {
+            width: 720px;
+        }
+
+        #player-pill .flank {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            transition-delay: 0s;
+        }
+
+        #player-pill[data-state="playing"] .flank,
+        #player-pill[data-state="paused"] .flank {
+            opacity: 1;
+            pointer-events: auto;
+            transition-delay: 0.2s;
+        }
+
+        .pill-accent-text,
+        .pill-accent-bg,
+        .pill-accent-shadow,
+        .album-art-pill,
+        .song-title-pill {
+            transition: all 0.4s ease;
+        }
+
+        /* Base / Idle State Colors */
+        .pill-accent-text {
+            color: #B58E62;
+        }
+
+        .pill-accent-bg {
+            background-color: #B58E62;
+        }
+
+        .pill-accent-shadow {
+            box-shadow: 0 0 15px rgba(181, 142, 98, 0.3);
+        }
+
+        /* Premium Disabled State for Empty Queue */
+        button:disabled.pill-accent-bg {
+            background-color: #3b3024 !important;
+            /* Tarnished brass */
+            color: #7A7885 !important;
+            box-shadow: none !important;
+            cursor: not-allowed;
+            transform: scale(1) !important;
+        }
+
+        /* Playing State */
+        #player-pill[data-state="playing"] .pill-accent-text {
+            color: #B58E62;
+        }
+
+        #player-pill[data-state="playing"] .pill-accent-bg {
+            background-color: #B58E62;
+        }
+
+        #player-pill[data-state="playing"] .pill-accent-shadow {
+            box-shadow: 0 0 15px rgba(181, 142, 98, 0.3);
+        }
+
+        #player-pill[data-state="playing"] .song-title-pill {
+            color: #EAE8E3;
+        }
+
+        #player-pill[data-state="playing"] .album-art-pill {
+            filter: grayscale(0%) brightness(1);
+        }
+
+        /* Paused State */
+        #player-pill[data-state="paused"] .pill-accent-text {
+            color: #8c7355;
+        }
+
+        #player-pill[data-state="paused"] .pill-accent-bg {
+            background-color: #8c7355;
+        }
+
+        #player-pill[data-state="paused"] .pill-accent-shadow {
+            box-shadow: 0 0 10px rgba(140, 115, 85, 0.1);
+        }
+
+        #player-pill[data-state="paused"] .song-title-pill {
+            color: #7A7885;
+        }
+
+        #player-pill[data-state="paused"] .album-art-pill {
+            filter: grayscale(40%) brightness(0.6);
+        }
+
+        /* Hide scrollbar completely to prevent layout jump in inner drawer */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+
+<body class="text-text-main font-body-main antialiased h-screen w-screen flex overflow-hidden relative">
+
+    <!-- 1. Collapsible Sidebar (z-30) -->
+    <nav id="sidebar"
+        class="w-20 smooth-layout h-full flex flex-col justify-between py-8 bg-black/40 backdrop-blur-3xl z-30 shrink-0 border-r border-white/5 relative overflow-hidden group">
+        <div class="flex flex-col gap-8 items-start w-full px-4">
+            <!-- Menu Toggle & Brand -->
+            <div class="flex items-center gap-4 w-full">
+                <button onclick="toggleSidebar()"
+                    class="w-12 h-12 shrink-0 rounded-full border border-white/10 flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors cursor-pointer text-muted hover:text-text-main">
+                    <span class="material-symbols-outlined text-[20px]">menu</span>
+                </button>
+                <div
+                    class="sidebar-label whitespace-nowrap opacity-0 transition-opacity duration-300 font-headline-lg italic text-xl tracking-wide">
+                    Sonic Topography</div>
+            </div>
+
+            <!-- Nav Items -->
+            <div class="flex flex-col gap-4 w-full mt-4">
+                <a class="flex items-center gap-4 w-full p-1 rounded-full text-muted hover:text-text-main hover:bg-white/5 transition-all"
+                    href="#">
+                    <div class="w-10 h-10 shrink-0 flex items-center justify-center rounded-full"><span
+                            class="material-symbols-outlined text-[24px]">house</span></div>
+                    <span
+                        class="sidebar-label opacity-0 whitespace-nowrap transition-opacity duration-300 text-[15px] font-medium tracking-wide">Home</span>
+                </a>
+                <a class="flex items-center gap-4 w-full p-1 rounded-full text-[#e2a973] bg-[#e2a973]/10 border border-[#e2a973]/20 shadow-[0_0_15px_rgba(226,169,115,0.1)] transition-all"
+                    href="#">
+                    <div class="w-10 h-10 shrink-0 flex items-center justify-center rounded-full"><span
+                            class="material-symbols-outlined text-[24px]"
+                            style="font-variation-settings: 'FILL' 1;">album</span></div>
+                    <span
+                        class="sidebar-label opacity-0 whitespace-nowrap transition-opacity duration-300 text-[15px] font-medium tracking-wide">Library</span>
+                </a>
+                <a class="flex items-center gap-4 w-full p-1 rounded-full text-muted hover:text-text-main hover:bg-white/5 transition-all"
+                    href="#">
+                    <div class="w-10 h-10 shrink-0 flex items-center justify-center rounded-full"><span
+                            class="material-symbols-outlined text-[24px]">extension</span></div>
+                    <span
+                        class="sidebar-label opacity-0 whitespace-nowrap transition-opacity duration-300 text-[15px] font-medium tracking-wide">Extensions</span>
+                </a>
+            </div>
+        </div>
+
+        <div class="px-4">
+            <a class="flex items-center gap-4 w-full p-1 rounded-full text-muted hover:text-text-main hover:bg-white/5 transition-all"
+                href="#">
+                <div class="w-10 h-10 shrink-0 flex items-center justify-center rounded-full"><span
+                        class="material-symbols-outlined text-[24px]">settings</span></div>
+                <span
+                    class="sidebar-label opacity-0 whitespace-nowrap transition-opacity duration-300 text-[15px] font-medium tracking-wide">Settings</span>
+            </a>
+        </div>
+    </nav>
+
+    <!-- 2. The Main Fluid Canvas -->
+    <div class="flex-1 h-full flex relative overflow-hidden">
+
+        <!-- A. Center Canvas (The Browsing Grid) -->
+        <!-- Removed @container, relying on viewport media queries so items slide and scale smoothly -->
+        <main class="flex-1 h-full flex flex-col relative overflow-y-auto custom-scrollbar z-10">
+
+            <!-- Library Header -->
+            <header
+                class="px-10 pt-12 pb-8 shrink-0 border-b border-white/5 sticky top-0 bg-[#050507]/90 backdrop-blur-xl z-20">
+                <h1 class="text-4xl font-headline-lg text-text-main leading-tight mb-2">Your Library</h1>
+                <div class="flex gap-6 text-sm tracking-widest uppercase font-medium text-muted mt-6">
+                    <button class="text-[#e2a973] border-b-2 border-[#e2a973] pb-2">Albums</button>
+                    <button class="hover:text-text-main pb-2 transition-colors">Playlists</button>
+                    <button class="hover:text-text-main pb-2 transition-colors">Artists</button>
+                </div>
+            </header>
+
+            <!-- Album Grid (Using viewport queries md: lg: xl: instead of container queries) -->
+            <div class="p-10 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-8 pb-40">
+
+                <!-- Album Card (Interactive) -->
+                <div class="group cursor-pointer grid-item-smooth" onclick="openDrawer('album')">
+                    <div
+                        class="w-full aspect-square rounded-[1.5rem] bg-zinc-800 border border-white/10 overflow-hidden shadow-lg mb-4 relative grid-item-smooth">
+                        <div class="w-full h-full bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
+                            style="background-image: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=400&auto=format&fit=crop');">
+                        </div>
+                        <div
+                            class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                            <div
+                                class="w-14 h-14 rounded-full bg-[#B58E62] flex items-center justify-center text-black shadow-lg">
+                                <span class="material-symbols-outlined text-[32px]"
+                                    style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                            </div>
+                        </div>
+                    </div>
+                    <h3 class="text-base font-medium text-text-main truncate">Nocturne Sequences</h3>
+                    <p class="text-sm text-muted mt-1">Elias Vault</p>
+                </div>
+
+                <!-- Dummy Cards -->
+                <div class="group cursor-pointer grid-item-smooth">
+                    <div
+                        class="w-full aspect-square rounded-[1.5rem] bg-zinc-800 border border-white/10 overflow-hidden shadow-lg mb-4 grid-item-smooth">
+                        <div class="w-full h-full bg-cover bg-center"
+                            style="background-image: url('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=400&auto=format&fit=crop');">
+                        </div>
+                    </div>
+                    <h3 class="text-base font-medium text-text-main truncate">Neon Genesis</h3>
+                    <p class="text-sm text-muted mt-1">Kavinsky</p>
+                </div>
+                <div class="group cursor-pointer grid-item-smooth">
+                    <div
+                        class="w-full aspect-square rounded-[1.5rem] bg-zinc-800 border border-white/10 overflow-hidden shadow-lg mb-4 grid-item-smooth">
+                        <div class="w-full h-full bg-cover bg-center"
+                            style="background-image: url('https://images.unsplash.com/photo-1557672172-298e090bd0f1?q=80&w=400&auto=format&fit=crop');">
+                        </div>
+                    </div>
+                    <h3 class="text-base font-medium text-text-main truncate">Analog Dreams</h3>
+                    <p class="text-sm text-muted mt-1">Tycho</p>
+                </div>
+                <div class="group cursor-pointer grid-item-smooth">
+                    <div
+                        class="w-full aspect-square rounded-[1.5rem] bg-zinc-800 border border-white/10 overflow-hidden shadow-lg mb-4 grid-item-smooth">
+                        <div class="w-full h-full bg-cover bg-center"
+                            style="background-image: url('https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=400&auto=format&fit=crop');">
+                        </div>
+                    </div>
+                    <h3 class="text-base font-medium text-text-main truncate">Void Mechanics</h3>
+                    <p class="text-sm text-muted mt-1">Jon Hopkins</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- B. Right Transient Drawer (z-20) -->
+        <aside id="right-drawer"
+            class="w-0 smooth-layout h-full bg-[#08080a] border-white/5 overflow-hidden shrink-0 relative z-20">
+            <div class="w-[400px] h-full absolute inset-y-0 right-0 flex flex-col">
+                <!-- Drawer Header -->
+                <div class="px-6 py-6 flex items-center justify-between border-b border-white/5 shrink-0">
+                    <h2 id="drawer-title" class="text-lg font-medium tracking-wide uppercase text-[#B58E62]">Album View
+                    </h2>
+                    <button onclick="closeDrawer()"
+                        class="w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center text-muted hover:text-text-main transition-colors">
+                        <span class="material-symbols-outlined text-[20px]">close</span>
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto no-scrollbar relative">
+                    <!-- Added pb-32 to these inner views to ensure content isn't blocked by the Overlay Pill -->
+                    <!-- View 1: ALBUM DETAILS -->
+                    <div id="view-album" class="hidden flex flex-col absolute inset-0 p-6 pb-32">
+                        <div class="flex items-center gap-6 mb-8">
+                            <div class="w-28 h-28 shrink-0 rounded-[1rem] bg-cover bg-center shadow-lg border border-white/10"
+                                style="background-image: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=400&auto=format&fit=crop');">
+                            </div>
+                            <div>
+                                <h3 class="text-2xl font-headline-lg text-text-main mb-1">Nocturne Sequences</h3>
+                                <p class="text-sm text-muted">Elias Vault</p>
+                            </div>
+                        </div>
+                        <div class="flex-1 flex flex-col">
+                            <div class="track-row flex items-center p-3 rounded-xl cursor-pointer group">
+                                <div class="w-8 text-sm text-[#B58E62]"><span
+                                        class="material-symbols-outlined text-[18px] animate-pulse"
+                                        style="font-variation-settings: 'FILL' 1;">graphic_eq</span></div>
+                                <div class="flex-1 text-[15px] font-medium text-[#B58E62]">Nocturne in E-Flat Major
+                                </div>
+                            </div>
+                            <div class="track-row flex items-center p-3 rounded-xl cursor-pointer group">
+                                <div class="w-8 text-sm text-muted"><span class="track-number">2</span><span
+                                        class="material-symbols-outlined track-play-icon text-[18px]"
+                                        style="font-variation-settings: 'FILL' 1;">play_arrow</span></div>
+                                <div class="flex-1 text-[15px] font-medium text-text-main group-hover:text-white">
+                                    Prelude in D-Flat Major</div>
+                            </div>
+                            <div class="track-row flex items-center p-3 rounded-xl cursor-pointer group">
+                                <div class="w-8 text-sm text-muted"><span class="track-number">3</span><span
+                                        class="material-symbols-outlined track-play-icon text-[18px]"
+                                        style="font-variation-settings: 'FILL' 1;">play_arrow</span></div>
+                                <div class="flex-1 text-[15px] font-medium text-text-main group-hover:text-white">Clair
+                                    de Lune</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- View 2: UP NEXT QUEUE -->
+                    <div id="view-queue" class="hidden flex flex-col absolute inset-0 p-6 pb-32">
+                        <div class="text-xs tracking-widest text-muted uppercase mb-4 font-medium">Now Playing</div>
+                        <div class="flex items-center gap-4 mb-8 bg-white/5 p-3 rounded-xl border border-white/5">
+                            <div class="w-12 h-12 shrink-0 rounded-lg bg-cover bg-center shadow-sm"
+                                style="background-image: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop');">
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-[#B58E62]">Nocturne in E-Flat Major</div>
+                                <div class="text-xs text-muted">Elias Vault</div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="text-xs tracking-widest text-muted uppercase font-medium">Up Next</div>
+                            <button onclick="clearQueue()"
+                                class="text-xs text-muted hover:text-white transition-colors">Clear Queue</button>
+                        </div>
+
+                        <div class="flex-1 flex flex-col">
+                            <div class="track-row flex items-center p-3 rounded-xl cursor-pointer group">
+                                <div class="w-8 text-muted hover:text-white"><span
+                                        class="material-symbols-outlined text-[18px]">drag_indicator</span></div>
+                                <div class="flex-1 text-[14px] text-text-main">Prelude in D-Flat Major</div>
+                            </div>
+                            <div class="track-row flex items-center p-3 rounded-xl cursor-pointer group">
+                                <div class="w-8 text-muted hover:text-white"><span
+                                        class="material-symbols-outlined text-[18px]">drag_indicator</span></div>
+                                <div class="flex-1 text-[14px] text-text-main">Clair de Lune</div>
+                            </div>
+                            <div class="track-row flex items-center p-3 rounded-xl cursor-pointer group">
+                                <div class="w-8 text-muted hover:text-white"><span
+                                        class="material-symbols-outlined text-[18px]">drag_indicator</span></div>
+                                <div class="flex-1 text-[14px] text-text-main">Gymnopédie No. 1</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 3. The Player Pill (Now an Absolute Overlay over the entire application) -->
+    <!-- Position changed to 'fixed', moved outside the structural layout, z-index cranked to 100 -->
+    <div id="player-pill" data-state="idle" class="fixed bottom-8 left-1/2 -translate-x-1/2 h-[72px] z-[100]">
+
+        <!-- Seek Bar -->
+        <div class="absolute -top-[10px] left-[32px] right-[32px] h-[20px] cursor-pointer group z-20">
+            <div
+                class="absolute top-[10px] left-0 w-full h-[2px] bg-white/10 rounded-t-full group-hover:h-[4px] transition-all overflow-hidden">
+                <div class="h-full w-[45%] pill-accent-bg rounded-r-full"></div>
+            </div>
+            <div
+                class="absolute top-[10px] left-[45%] -translate-x-1/2 -translate-y-1/2 w-[12px] h-[12px] pill-accent-bg rounded-full opacity-0 scale-50 group-hover:opacity-100 group-hover:scale-100 shadow-[0_0_10px_rgba(181,142,98,0.6)] transition-all duration-200 pointer-events-none">
+            </div>
+        </div>
+
+        <!-- Pill Body -->
+        <div
+            class="w-full h-full bg-pill-bg rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.8)] border border-white/5 overflow-hidden flex items-center justify-center relative z-10 backdrop-blur-md">
+
+            <!-- Left Flank -->
+            <div class="flank absolute left-6 right-[calc(50%+130px)] flex items-center gap-3 overflow-hidden">
+                <div
+                    class="w-[44px] h-[44px] shrink-0 rounded-[12px] bg-zinc-800 border border-white/10 overflow-hidden shadow-md album-art-pill">
+                    <div class="w-full h-full bg-cover bg-center"
+                        style="background-image: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop');">
+                    </div>
+                </div>
+                <div class="flex flex-col justify-center min-w-0 w-full pt-0.5">
+                    <span
+                        class="song-title-pill text-[15px] font-medium truncate block leading-tight tracking-wide">Nocturne
+                        in E-Flat Major</span>
+                    <div class="flex items-center gap-1.5 text-[11px] text-muted font-medium mt-0.5">
+                        <span>1:24</span><span class="text-white/20">/</span><span>4:15</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Controls -->
+            <div class="flex items-center gap-2 shrink-0 z-20">
+                <button
+                    class="text-muted hover:text-text-main transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5"><span
+                        class="material-symbols-outlined text-[20px]">shuffle</span></button>
+                <button
+                    class="text-muted hover:text-text-main transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5"><span
+                        class="material-symbols-outlined text-[26px]"
+                        style="font-variation-settings: 'FILL' 1;">skip_previous</span></button>
+
+                <button id="main-play-btn" disabled
+                    class="pill-accent-bg pill-accent-shadow text-pill-bg w-[52px] h-[52px] rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-300 mx-1"
+                    onclick="togglePlayPause()">
+                    <span id="play-pause-icon" class="material-symbols-outlined text-[32px]"
+                        style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                </button>
+
+                <button
+                    class="text-muted hover:text-text-main transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5"><span
+                        class="material-symbols-outlined text-[26px]"
+                        style="font-variation-settings: 'FILL' 1;">skip_next</span></button>
+                <button
+                    class="text-muted hover:text-text-main transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5"><span
+                        class="material-symbols-outlined text-[20px]">repeat</span></button>
+            </div>
+
+            <!-- Right Flank -->
+            <div
+                class="flank absolute right-6 left-[calc(50%+130px)] flex items-center justify-end gap-5 overflow-hidden">
+                <button onclick="toggleDrawer('queue')"
+                    class="text-muted hover:text-text-main transition-colors flex items-center group relative">
+                    <span class="material-symbols-outlined text-[22px]">queue_music</span>
+                </button>
+                <div class="flex items-center gap-2.5 group cursor-pointer">
+                    <span
+                        class="material-symbols-outlined text-[22px] text-muted group-hover:text-text-main transition-colors">volume_up</span>
+                    <div class="relative w-[48px] h-[20px] flex items-center">
+                        <div class="absolute left-0 w-full h-[2px] bg-white/10 rounded-full overflow-hidden">
+                            <div class="h-full pill-accent-bg w-[70%] transition-colors duration-400"></div>
+                        </div>
+                        <div
+                            class="absolute left-[70%] -translate-x-1/2 w-[10px] h-[10px] pill-accent-bg rounded-full opacity-0 scale-50 group-hover:opacity-100 group-hover:scale-100 shadow-[0_0_8px_rgba(181,142,98,0.5)] transition-all duration-200 pointer-events-none">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* Sidebar Logic */
+        let sidebarOpen = false;
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const labels = document.querySelectorAll('.sidebar-label');
+            sidebarOpen = !sidebarOpen;
+
+            if (sidebarOpen) {
+                sidebar.classList.remove('w-20');
+                sidebar.classList.add('w-64');
+                setTimeout(() => { labels.forEach(l => l.classList.remove('opacity-0')); }, 200);
+            } else {
+                labels.forEach(l => l.classList.add('opacity-0'));
+                sidebar.classList.remove('w-64');
+                sidebar.classList.add('w-20');
+            }
+        }
+
+        /* Drawer & Pill Logic */
+        let activeDrawer = null;
+
+        function openDrawer(view) {
+            const drawer = document.getElementById('right-drawer');
+            const title = document.getElementById('drawer-title');
+
+            if (activeDrawer === view) {
+                closeDrawer();
+                return;
+            }
+
+            document.getElementById('view-album').classList.add('hidden');
+            document.getElementById('view-queue').classList.add('hidden');
+            document.getElementById('view-' + view).classList.remove('hidden');
+            title.textContent = view === 'album' ? 'Album Details' : 'Up Next';
+
+            drawer.classList.remove('w-0');
+            drawer.classList.add('w-[400px]', 'border-l');
+            activeDrawer = view;
+
+            if (view === 'album') {
+                const pill = document.getElementById('player-pill');
+                const btn = document.getElementById('main-play-btn');
+                const icon = document.getElementById('play-pause-icon');
+
+                btn.removeAttribute('disabled');
+                pill.setAttribute('data-state', 'playing');
+                icon.textContent = 'pause';
+            }
+        }
+
+        function toggleDrawer(view) {
+            openDrawer(view);
+        }
+
+        function closeDrawer() {
+            const drawer = document.getElementById('right-drawer');
+            drawer.classList.add('w-0');
+            drawer.classList.remove('w-[400px]', 'border-l');
+            activeDrawer = null;
+        }
+
+        /* Play/Pause Toggle */
+        function togglePlayPause() {
+            const pill = document.getElementById('player-pill');
+            const icon = document.getElementById('play-pause-icon');
+            const currentState = pill.getAttribute('data-state');
+
+            if (currentState === 'playing') {
+                pill.setAttribute('data-state', 'paused');
+                icon.textContent = 'play_arrow';
+            } else {
+                pill.setAttribute('data-state', 'playing');
+                icon.textContent = 'pause';
+            }
+        }
+
+        /* Simulate clearing queue */
+        function clearQueue() {
+            const pill = document.getElementById('player-pill');
+            const btn = document.getElementById('main-play-btn');
+            const icon = document.getElementById('play-pause-icon');
+
+            pill.setAttribute('data-state', 'idle');
+            icon.textContent = 'play_arrow';
+            btn.setAttribute('disabled', 'true');
+            closeDrawer();
+        }
+    </script>
+</body>
+
+</html>

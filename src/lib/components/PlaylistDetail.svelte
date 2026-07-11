@@ -1,14 +1,13 @@
 <script lang="ts">
     import { libraryStore, type Playlist, type LocalTrack } from "$lib/stores/library.svelte";
     import { audioStore } from "$lib/stores/audio.svelte";
-    import { onMount } from "svelte";
 
     let { playlist, onBack, onDeleted } = $props<{ playlist: Playlist, onBack: () => void, onDeleted: () => void }>();
     
     let tracks = $state<LocalTrack[]>([]);
     let artUrls = $state<string[]>([]);
     let isEditingName = $state(false);
-    let editName = $state(playlist.name);
+    let editName = $state("");
     let draggedIndex = $state<number | null>(null);
 
     async function loadData() {
@@ -16,13 +15,16 @@
         artUrls = await libraryStore.getPlaylistArtworkMosaic(playlist.id);
     }
 
-    onMount(() => {
+    $effect(() => {
         loadData();
+        if (!isEditingName) {
+            editName = playlist.name;
+        }
     });
 
-    function playAll() {
+    async function playAll() {
         if (tracks.length === 0) return;
-        audioStore.setQueue(
+        await audioStore.setQueue(
             tracks.map(t => ({
                 id: t.id,
                 title: t.title,
@@ -31,11 +33,11 @@
             })),
             0
         );
-        audioStore.play();
+        await audioStore.play();
     }
 
-    function playTrack(index: number) {
-        audioStore.setQueue(
+    async function playTrack(index: number) {
+        await audioStore.setQueue(
             tracks.map(t => ({
                 id: t.id,
                 title: t.title,
@@ -44,7 +46,7 @@
             })),
             index
         );
-        audioStore.play();
+        await audioStore.play();
     }
 
     async function removeTrack(e: Event, trackId: number) {
@@ -63,7 +65,6 @@
     async function saveName() {
         if (editName.trim() && editName !== playlist.name) {
             await libraryStore.renamePlaylist(playlist.id, editName);
-            playlist.name = editName; // Update local prop for immediate reflection
         }
         isEditingName = false;
     }

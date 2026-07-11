@@ -1,6 +1,7 @@
 <script lang="ts">
     import { libraryStore, type Playlist } from "$lib/stores/library.svelte";
-    import { onMount } from "svelte";
+    import { flip } from "svelte/animate";
+    import { cubicOut } from "svelte/easing";
 
     let { onSelectPlaylist } = $props<{ onSelectPlaylist: (p: Playlist) => void }>();
 
@@ -15,9 +16,10 @@
     }
 
     async function loadMosaics() {
-        for (const playlist of libraryStore.playlists) {
-            mosaics[playlist.id] = await libraryStore.getPlaylistArtworkMosaic(playlist.id);
-        }
+        const entries = await Promise.all(
+            libraryStore.playlists.map(async p => [p.id, await libraryStore.getPlaylistArtworkMosaic(p.id)] as const)
+        );
+        mosaics = Object.fromEntries(entries);
     }
 
     // Reactively load mosaics when playlists change
@@ -66,10 +68,14 @@
     </div>
 {:else}
     <div class="playlist-grid">
-        {#each libraryStore.playlists as playlist}
+        {#each libraryStore.playlists as playlist (playlist.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="playlist-card glass-panel" onclick={() => onSelectPlaylist(playlist)}>
+            <div 
+                class="playlist-card glass-panel" 
+                onclick={() => onSelectPlaylist(playlist)}
+                style:view-transition-name="playlist-{playlist.id}"
+            >
                 <div class="art">
                     {#if mosaics[playlist.id] && mosaics[playlist.id].length >= 4}
                         <div class="mosaic">
@@ -93,32 +99,31 @@
 <style>
     .playlist-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: 2rem;
+        padding: 2.5rem;
+        padding-bottom: 10rem;
     }
     .playlist-card {
-        padding: 1rem;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
         cursor: pointer;
-        transition: transform 0.2s, background 0.2s;
-        border-radius: 12px;
+        transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     .playlist-card:hover {
         transform: translateY(-4px);
-        background: rgba(31, 40, 51, 0.9);
     }
     .art {
         width: 100%;
         aspect-ratio: 1;
-        background: rgba(0,0,0,0.2);
-        border-radius: 8px;
+        background-color: #27272a;
+        border-radius: 1.5rem;
         overflow: hidden;
         display: flex;
         justify-content: center;
         align-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
     }
     .mosaic {
         display: grid;

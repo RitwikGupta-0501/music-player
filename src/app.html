@@ -8,6 +8,26 @@
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
+    <div id="debug-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: rgba(0,0,0,0.8); color: #ff4444; font-family: monospace; padding: 20px; pointer-events: none; max-height: 50vh; overflow-y: auto;"></div>
+    <script>
+      function showDebug() {
+        document.getElementById('debug-overlay').style.display = 'block';
+      }
+      window.addEventListener('error', e => {
+        showDebug();
+        document.getElementById('debug-overlay').innerHTML += 'ERR: ' + e.message + '<br>';
+      });
+      window.addEventListener('unhandledrejection', e => {
+        showDebug();
+        document.getElementById('debug-overlay').innerHTML += 'PROMISE: ' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '<br>';
+      });
+      const origError = console.error;
+      console.error = (...args) => {
+        showDebug();
+        document.getElementById('debug-overlay').innerHTML += 'CONSOLE_ERR: ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ') + '<br>';
+        origError(...args);
+      };
+    </script>
     <div style="display: contents">%sveltekit.body%</div>
   </body>
 </html>

@@ -1,212 +1,242 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;700&display=swap');
+/* Outfit – premium geometric sans, available via Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+/* Newsreader – majestic modern serif */
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap');
 
+/* ─────────────────────────────────────────
+   ECHO HARDWARE LUXURY DESIGN TOKENS
+   Palette: deep off-black + brass/copper accents.
+───────────────────────────────────────── */
 :root {
-  /* Color Palette - Cinematic Chalk on Slate */
-  --color-bg: #0b0c10;
-  --color-surface: #1f2833;
-  --color-surface-light: #2a3644;
-  --color-chalk: #c5c6c7;
-  --color-chalk-muted: #8b949e;
-  --color-cyan: #66fcf1;
-  --color-teal: #45a29e;
-  --color-danger: #ff4c4c;
-  
-  --font-display: 'Outfit', sans-serif;
-  --font-body: 'Inter', sans-serif;
-  
-  --glass-bg: rgba(31, 40, 51, 0.6);
-  --glass-border: rgba(197, 198, 199, 0.1);
+  /* Surface hierarchy */
+  --echo-void:     #050507;
+  --echo-base:     #0a0a0c;
+  --echo-surface:  #101014;
+  --echo-raised:   #15151a;
+  --echo-overlay:  #1a1a21;
+
+  /* Text hierarchy */
+  --echo-text-1:   #eae8e3;   /* primary */
+  --echo-text-2:   #7a7885;   /* secondary */
+  --echo-text-3:   #46464f;   /* dim / timestamps */
+
+  /* Accent – Brass / Copper */
+  --echo-primary:  #e2a973;
+  --echo-primary-dark: #b58e62;
+
+  /* Borders */
+  --echo-border:         rgba(255 255 255 / 0.05);
+  --echo-border-medium:  rgba(255 255 255 / 0.10);
+  --echo-border-strong:  rgba(255 255 255 / 0.15);
+
+  /* Glass material */
+  --echo-glass-bg:       rgba(25 25 32 / 0.25);
+  --echo-glass-tint:     rgba(255 255 255 / 0.04);
+
+  /* Typography */
+  --echo-font-body: "Outfit", system-ui, -apple-system, sans-serif;
+  --echo-font-heading: "Newsreader", serif;
+
+  /* Layout */
+  --sidebar-w: 80px; /* Collapsed width */
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* ─── Reset ─────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; padding: 0; }
+
+html { height: 100%; }
 
 body {
-  font-family: var(--font-body);
-  background: radial-gradient(circle at 50% 0%, #1f2833 0%, var(--color-bg) 70%);
-  background-attachment: fixed;
-  color: var(--color-chalk);
+  font-family: var(--echo-font-body);
+  background-color: var(--echo-void);
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(99, 159, 171, 0.05) 0%, transparent 60%),
+    radial-gradient(circle at 80% 20%, rgba(226, 169, 115, 0.03) 0%, transparent 40%);
+  color: var(--echo-text-1);
   min-height: 100vh;
-  overflow: hidden; /* App container handles scrolling */
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-h1, h2, h3, h4 {
-  font-family: var(--font-display);
-  font-weight: 600;
-  color: #fff;
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--echo-font-heading);
+  font-weight: 500; /* Adjusted weight for serif */
+  color: var(--echo-text-1);
+  letter-spacing: -0.01em;
 }
 
-/* Typography Utilities */
-.text-cyan { color: var(--color-cyan); }
-.text-teal { color: var(--color-teal); }
-.text-muted { color: var(--color-chalk-muted); font-size: 0.85rem;}
-
-/* Glassmorphism Utilities */
-.glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+/* ─── SPA Layout ─────────────────────────── */
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
 }
 
-/* Forms */
-input[type="text"] {
-  background: rgba(11, 12, 16, 0.5);
-  border: 1px solid var(--color-surface-light);
-  color: var(--color-chalk);
-  padding: 0.8rem 1rem;
-  border-radius: 8px;
-  font-family: var(--font-body);
-  font-size: 0.95rem;
-  transition: all 0.3s ease;
-  outline: none;
-  width: 100%;
-}
-input[type="text"]:focus {
-  border-color: var(--color-cyan);
-  box-shadow: 0 0 0 2px rgba(102, 252, 241, 0.2);
-}
-input[type="text"]:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* Main content – bottom padding reserves space for floating player */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  background: var(--echo-void);
+  z-index: 10;
 }
 
-/* Buttons */
+/* ─── Glassmorphism utility ──────────────── */
+/* Web approximation of Apple Liquid Glass using backdrop-filter */
+.glass {
+  background: var(--echo-glass-bg);
+  backdrop-filter: blur(40px) saturate(180%) contrast(1.04);
+  -webkit-backdrop-filter: blur(40px) saturate(180%) contrast(1.04);
+  border: 1px solid var(--echo-border-medium);
+  box-shadow:
+    inset 0 1px 0 rgba(255 255 255 / 0.12),
+    inset 0 -1px 0 rgba(255 255 255 / 0.04),
+    0 24px 80px rgba(0 0 0 / 0.55);
+}
+
+/* Solid fallback for prefers-reduced-transparency */
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--echo-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* ─── Typography utilities ───────────────── */
+.text-1    { color: var(--echo-text-1); }
+.text-2    { color: var(--echo-text-2); }
+.text-3    { color: var(--echo-text-3); }
+.text-silver { color: var(--echo-silver); }
+
+.font-headline-lg { font-family: var(--echo-font-heading); }
+.font-body-main { font-family: var(--echo-font-body); }
+
+/* ─── Buttons (global base) ─────────────── */
 button {
-  background: var(--color-surface-light);
-  color: var(--color-chalk);
-  border: 1px solid var(--glass-border);
-  padding: 0.75rem 1.25rem;
-  border-radius: 8px;
-  font-family: var(--font-display);
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-family: var(--echo-font);
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  border: none;
+  border-radius: 10px;
+  padding: 0.625rem 1.125rem;
+  background: rgba(255 255 255 / 0.07);
+  color: var(--echo-text-2);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 button:hover:not(:disabled) {
-  background: var(--color-teal);
-  color: #fff;
-  border-color: transparent;
-  transform: translateY(-1px);
+  background: rgba(255 255 255 / 0.11);
+  color: var(--echo-text-1);
 }
 button:active:not(:disabled) {
-  transform: translateY(0);
+  transform: scale(0.97);
 }
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 button.primary {
-  background: var(--color-cyan);
-  color: var(--color-bg);
-  border-color: transparent;
+  background: var(--echo-chrome);
+  color: var(--echo-void);
+  font-weight: 600;
 }
 button.primary:hover:not(:disabled) {
-  background: #fff;
-  box-shadow: 0 0 15px rgba(102, 252, 241, 0.4);
+  background: #ffffff;
 }
+
 button.ghost {
   background: transparent;
-  border-color: transparent;
-  padding: 0.5rem 1rem;
+  color: var(--echo-text-2);
+  padding: 0.5rem 0.75rem;
 }
-button.ghost:hover {
-  background: rgba(255,255,255,0.1);
-  transform: none;
-}
-
-/* SPA Layout Grid */
-.app-container {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  grid-template-rows: 1fr 100px;
-  height: 100vh;
-  width: 100vw;
+button.ghost:hover:not(:disabled) {
+  background: rgba(255 255 255 / 0.06);
+  color: var(--echo-text-1);
 }
 
-.sidebar {
-  grid-column: 1;
-  grid-row: 1 / 3;
-  background: rgba(11, 12, 16, 0.8);
-  backdrop-filter: blur(20px);
-  border-right: 1px solid var(--glass-border);
-  padding: 2rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-  z-index: 30;
+/* ─── Form inputs ────────────────────────── */
+input[type="text"] {
+  font-family: var(--echo-font);
+  font-size: 0.875rem;
+  background: rgba(255 255 255 / 0.04);
+  border: 1px solid var(--echo-border);
+  color: var(--echo-text-1);
+  padding: 0.625rem 0.875rem;
+  border-radius: 10px;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="text"]::placeholder { color: var(--echo-text-3); }
+input[type="text"]:focus {
+  border-color: var(--echo-border-strong);
+  box-shadow: 0 0 0 3px rgba(255 255 255 / 0.05);
+}
+input[type="text"]:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
-.main-content {
-  grid-column: 2;
-  grid-row: 1;
-  padding: 2rem 3rem;
-  overflow-y: auto;
-  position: relative;
-  z-index: 10;
-}
-
-.bottom-player {
-  grid-column: 2;
-  grid-row: 2;
-  background: rgba(31, 40, 51, 0.85);
-  backdrop-filter: blur(24px);
-  border-top: 1px solid var(--glass-border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 3rem;
-  z-index: 20;
-}
-
-/* Track Cards */
+/* ─── Track list (shared) ────────────────── */
 .track-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
+
 .track-card {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(31, 40, 51, 0.4);
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 0.75rem;
   border-radius: 8px;
   border: 1px solid transparent;
-  transition: all 0.2s;
+  border-left-width: 2px;
+  border-left-color: transparent;
+  transition: background 0.12s ease;
   cursor: pointer;
 }
 .track-card:hover {
-  background: rgba(31, 40, 51, 0.8);
-  border-color: var(--glass-border);
+  background: rgba(255 255 255 / 0.04);
 }
 .track-card.now-playing {
-  background: rgba(102, 252, 241, 0.06);
-  border-left: 3px solid var(--color-cyan);
-}
-.track-card.now-playing:hover {
-  background: rgba(102, 252, 241, 0.1);
+  background: rgba(255 255 255 / 0.05);
+  border-left-color: var(--echo-silver);
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent; 
-}
+/* ─── Custom scrollbar ───────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-surface-light); 
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-teal); 
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ─── Reduced motion gate ────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── View Transition Overrides ──────────────── */
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }

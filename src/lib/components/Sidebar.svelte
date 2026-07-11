@@ -1,90 +1,228 @@
 <script lang="ts">
-    import { Disc, ListMusic, Globe, Settings } from "lucide-svelte";
+    import { List, House, Disc, PuzzlePiece, Gear } from "phosphor-svelte";
+    import { transitionLayout } from "$lib/utils/transitions";
+    
     let { activeView = $bindable("albums") } = $props<{ activeView?: string }>();
+    
+    let sidebarOpen = $state(false);
+
+    function toggleSidebar() {
+        transitionLayout(() => { sidebarOpen = !sidebarOpen; });
+    }
 </script>
 
-<div class="sidebar">
-    <div>
-        <h1 style="margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; letter-spacing: -0.02em;">
-            Echo <span class="text-cyan">Engine</span>
-        </h1>
+<aside class="sidebar" class:open={sidebarOpen}>
+    <div class="sidebar-content">
+        <!-- Menu Toggle & Brand -->
+        <div class="sidebar-header">
+            <button class="toggle-btn" onclick={toggleSidebar}>
+                <List size={20} weight="bold" />
+            </button>
+            <div class="brand">
+                <span class="wordmark">Sonic Topography</span>
+            </div>
+        </div>
+
+        <!-- Primary navigation -->
+        <nav class="sidebar-nav">
+            <button
+                class="nav-item"
+                class:active={activeView === "home"}
+                onclick={() => activeView = "home"}
+            >
+                <div class="icon-container">
+                    <House size={24} weight={activeView === "home" ? "fill" : "regular"} />
+                </div>
+                <span class="label">Home</span>
+            </button>
+            <button
+                class="nav-item"
+                class:active={activeView === "albums"}
+                onclick={() => activeView = "albums"}
+            >
+                <div class="icon-container">
+                    <Disc size={24} weight={activeView === "albums" ? "fill" : "regular"} />
+                </div>
+                <span class="label">Library</span>
+            </button>
+            <button
+                class="nav-item"
+                class:active={activeView === "providers"}
+                onclick={() => activeView = "providers"}
+            >
+                <div class="icon-container">
+                    <PuzzlePiece size={24} weight={activeView === "providers" ? "fill" : "regular"} />
+                </div>
+                <span class="label">Extensions</span>
+            </button>
+        </nav>
     </div>
 
-    <nav class="nav-links">
-        <button 
-            class={activeView === "albums" ? "primary" : "ghost"} 
-            onclick={() => activeView = "albums"}
-        >
-            <Disc size={18} />
-            <span>Local Albums</span>
-        </button>
-        <button 
-            class={activeView === "playlists" ? "primary" : "ghost"} 
-            onclick={() => activeView = "playlists"}
-        >
-            <ListMusic size={18} />
-            <span>Playlists</span>
-        </button>
-        <button 
-            class={activeView === "providers" ? "primary" : "ghost"} 
-            onclick={() => activeView = "providers"}
-        >
-            <Globe size={18} />
-            <span>Network Providers</span>
-        </button>
-        <button 
-            class={activeView === "settings" ? "primary" : "ghost"} 
+    <!-- Settings pinned to bottom -->
+    <div class="sidebar-footer">
+        <button
+            class="nav-item"
+            class:active={activeView === "settings"}
             onclick={() => activeView = "settings"}
         >
-            <Settings size={18} />
-            <span>Settings</span>
+            <div class="icon-container">
+                <Gear size={24} weight={activeView === "settings" ? "fill" : "regular"} />
+            </div>
+            <span class="label">Settings</span>
         </button>
-    </nav>
-</div>
+    </div>
+</aside>
 
 <style>
-    .nav-links {
+    .sidebar {
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(40px);
+        -webkit-backdrop-filter: blur(40px);
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
+        height: 100vh;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
-        margin-top: 2rem;
+        justify-content: space-between;
+        padding: 2rem 0;
+        position: sticky;
+        top: 0;
+        user-select: none;
+        width: 80px;
+        z-index: 30;
+        flex-shrink: 0;
+        overflow: hidden;
     }
 
-    .nav-links button {
+    .sidebar.open {
+        width: 256px; /* w-64 */
+    }
+
+    /* Reduced-transparency fallback */
+    @media (prefers-reduced-transparency: reduce) {
+        .sidebar {
+            background: var(--echo-surface);
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+    }
+
+    .sidebar-content {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+        width: 100%;
+        padding: 0 1rem;
+    }
+
+    .sidebar-header {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        text-align: left;
+        gap: 1rem;
         width: 100%;
-        padding: 0.75rem 1rem;
-        border-radius: 8px;
-        font-size: 0.95rem;
-        font-family: var(--font-body);
-        font-weight: 500;
-        transition: all 0.2s ease;
     }
 
-    .nav-links button.ghost {
-        background: transparent;
-        color: var(--color-chalk-muted);
-        border: 1px solid transparent;
-    }
-
-    .nav-links button.ghost:hover {
+    .toggle-btn {
+        width: 48px;
+        height: 48px;
+        flex-shrink: 0;
+        border-radius: 9999px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
         background: rgba(255, 255, 255, 0.05);
-        color: #fff;
-        border-color: rgba(197, 198, 199, 0.05);
+        color: var(--echo-text-2);
+        cursor: pointer;
+        transition: background-color 0.2s, color 0.2s;
+        padding: 0;
     }
 
-    .nav-links button.primary {
-        background: rgba(102, 252, 241, 0.1);
-        color: var(--color-cyan);
-        border: 1px solid rgba(102, 252, 241, 0.2);
+    .toggle-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--echo-text-1);
     }
 
-    .nav-links button.primary:hover {
-        background: rgba(102, 252, 241, 0.15);
-        color: var(--color-cyan);
-        box-shadow: 0 0 15px rgba(102, 252, 241, 0.15);
+    .brand {
+        display: flex;
+        align-items: center;
+    }
+
+    .wordmark {
+        font-family: var(--echo-font-heading);
+        font-size: 1.25rem; /* text-xl */
+        font-weight: 400;
+        font-style: italic;
+        color: var(--echo-text-1);
+        opacity: 0;
+        white-space: nowrap;
+        transition: opacity 0.3s ease;
+        letter-spacing: 0.025em;
+    }
+
+    .sidebar.open .wordmark {
+        opacity: 1;
+    }
+
+    .sidebar-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        width: 100%;
+    }
+
+    .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.25rem; /* p-1 */
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 9999px; /* Pill shape */
+        color: var(--echo-text-2);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        width: 100%;
+        text-align: left;
+    }
+
+    .icon-container {
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 9999px;
+    }
+    
+    .label {
+        opacity: 0;
+        white-space: nowrap;
+        transition: opacity 0.3s ease;
+        font-size: 0.9375rem; /* 15px */
+        font-weight: 500;
+        font-family: var(--echo-font-body);
+        letter-spacing: 0.025em;
+    }
+    
+    .sidebar.open .label {
+        opacity: 1;
+    }
+
+    .nav-item:hover:not(.active) {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--echo-text-1);
+    }
+
+    .nav-item.active {
+        color: var(--echo-primary);
+        background: rgba(226, 169, 115, 0.1);
+        border: 1px solid rgba(226, 169, 115, 0.2);
+        box-shadow: 0 0 15px rgba(226, 169, 115, 0.1);
+    }
+
+    .sidebar-footer {
+        padding: 0 1rem;
+        width: 100%;
     }
 </style>
