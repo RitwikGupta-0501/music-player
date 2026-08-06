@@ -656,8 +656,19 @@
     }
 
     .provider-card.active {
-        border-color: var(--echo-primary);
-        background: rgba(226, 169, 115, 0.05); /* accent color */
+        background: rgba(226, 169, 115, 0.08); /* subtle primary tint */
+        border-color: transparent;
+    }
+
+    .provider-card.active::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 20%;
+        bottom: 20%;
+        width: 3px;
+        background: var(--echo-primary);
+        border-radius: 0 4px 4px 0;
     }
 
     .card-icon {
@@ -926,6 +937,7 @@
         font-size: 1rem;
         cursor: pointer;
         transition: all 0.2s;
+        position: relative;
     }
 
     .tab-btn:hover {
@@ -934,8 +946,19 @@
     }
 
     .tab-btn.active {
-        color: var(--echo-primary);
-        background: rgba(226, 169, 115, 0.1);
+        color: var(--echo-text-1);
+        background: rgba(226, 169, 115, 0.08);
+    }
+    
+    .tab-btn.active::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 20%;
+        right: 20%;
+        height: 3px;
+        background: var(--echo-primary);
+        border-radius: 4px 4px 0 0;
     }
     .badge {
         font-size: 0.75rem;
