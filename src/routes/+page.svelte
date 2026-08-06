@@ -8,6 +8,7 @@
     import QueueSidebar from "$lib/components/QueueSidebar.svelte";
     import KeyboardHandler from "$lib/components/KeyboardHandler.svelte";
     import ToastContainer from "$lib/components/ToastContainer.svelte";
+    import ProvidersView from "$lib/components/ProvidersView.svelte";
 
     import AlbumGrid from "$lib/components/AlbumGrid.svelte";
     import AlbumDetail from "$lib/components/AlbumDetail.svelte";
@@ -17,13 +18,14 @@
 
     import RightDrawer from "$lib/components/RightDrawer.svelte";
     import FullScreenPlayer from "$lib/components/FullScreenPlayer.svelte";
-    import { transitionLayout } from "$lib/utils/transitions";
+    import GlobalSearch from "$lib/components/GlobalSearch.svelte";
 
     let activeView = $state("albums");
     let selectedAlbum = $state<Album | null>(null);
     let selectedPlaylist = $state<Playlist | null>(null);
     let queueOpen = $state(false);
     let fullScreenOpen = $state(false);
+    let globalSearchOpen = $state(false);
 
     let drawerOpen = $derived(queueOpen || selectedAlbum !== null || selectedPlaylist !== null);
     
@@ -35,11 +37,9 @@
     }
 
     function closeDrawer() {
-        transitionLayout(() => {
-            queueOpen = false;
-            selectedAlbum = null;
-            selectedPlaylist = null;
-        });
+        queueOpen = false;
+        selectedAlbum = null;
+        selectedPlaylist = null;
     }
 
     $effect(() => {
@@ -49,15 +49,26 @@
             await libraryStore.fetchPlaylists();
         })();
 
+        document.documentElement.style.setProperty('--drawer-w', drawerOpen ? '400px' : '0px');
+
+        const handleSearch = () => {
+            globalSearchOpen = true;
+        };
         const handleEscape = () => {
-            if (activeView === "settings") {
+            if (globalSearchOpen) {
+                globalSearchOpen = false;
+            } else if (activeView === "settings") {
                 activeView = "albums";
             } else {
                 closeDrawer();
             }
         };
+        document.addEventListener('echo:search', handleSearch);
         document.addEventListener('echo:escape', handleEscape);
-        return () => document.removeEventListener('echo:escape', handleEscape);
+        return () => {
+            document.removeEventListener('echo:search', handleSearch);
+            document.removeEventListener('echo:escape', handleEscape);
+        };
     });
 </script>
 
@@ -69,14 +80,11 @@
 
     <main class="main-content">
         {#if activeView === "albums"}
-            <AlbumGrid onSelectAlbum={(a) => transitionLayout(() => { selectedAlbum = a; })} />
+            <AlbumGrid bind:activeView onSelectAlbum={(a) => { selectedAlbum = a; queueOpen = false; }} selectedAlbumId={selectedAlbum?.id} />
         {:else if activeView === "playlists"}
-            <PlaylistView onSelectPlaylist={(p) => transitionLayout(() => { selectedPlaylist = p; })} />
+            <PlaylistView bind:activeView onSelectPlaylist={(p) => { selectedPlaylist = p; queueOpen = false; }} />
         {:else if activeView === "providers"}
-            <div class="providers-placeholder">
-                <p class="text-2">Network Providers</p>
-                <p class="text-3" style="margin-top: 0.5rem; font-size: 0.875rem;">Coming soon</p>
-            </div>
+            <ProvidersView />
         {/if}
     </main>
 
@@ -102,20 +110,15 @@
 <!-- Floating player lives outside the grid, fixed bottom center -->
 <PlayerBar bind:queueOpen bind:fullScreenOpen />
 
-<FullScreenPlayer bind:isOpen={fullScreenOpen} onToggleQueue={() => transitionLayout(() => { queueOpen = !queueOpen; })} />
+<FullScreenPlayer bind:isOpen={fullScreenOpen} onToggleQueue={() => { queueOpen = !queueOpen; }} />
 
 {#if activeView === "settings"}
     <SettingsModal onClose={() => activeView = "albums"} />
 {/if}
+
+<GlobalSearch bind:isOpen={globalSearchOpen} />
+
 <ToastContainer />
 
 <style>
-    .providers-placeholder {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 60vh;
-        text-align: center;
-    }
 </style>

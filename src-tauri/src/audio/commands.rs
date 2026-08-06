@@ -1,27 +1,44 @@
 use tauri::State;
-use tokio::sync::oneshot;
 use crate::AppState;
-use crate::db::DbRequest;
 use super::AudioCommand;
 
 #[tauri::command]
 pub async fn load_audio(
     state: State<'_, AppState>,
-    path: String,
+    source: crate::queue::TrackSourceInfo,
     title: String,
     artist: Option<String>,
     album: Option<String>,
 ) -> Result<(), String> {
-    if !std::path::Path::new(&path).exists() {
-        return Err("FILE_NOT_FOUND".to_string());
-    }
+    let (resolved_source, duration_hint) = match source {
+        crate::queue::TrackSourceInfo::Local { file_path, .. } => {
+            let pb = std::path::PathBuf::from(&file_path);
+            if !pb.exists() {
+                return Err("FILE_NOT_FOUND".to_string());
+            }
+            (crate::audio::TrackSource::Local(pb), None)
+        }
+        crate::queue::TrackSourceInfo::Remote { provider_id, remote_track_id, stream_url, duration_ms, .. } => {
+            let final_url = if let Some(url) = stream_url {
+                url
+            } else {
+                // Needs resolution
+                let manager = state.provider_manager.lock().await;
+                let resolved = manager.resolve(&provider_id, &remote_track_id).await.map_err(|e| e.to_string())?;
+                resolved.stream_url
+            };
+            
+            crate::providers::check_url_allowed(&final_url).map_err(|e| e.to_string())?;
+            let parsed_url = url::Url::parse(&final_url).map_err(|e| format!("Invalid URL: {}", e))?;
+            (crate::audio::TrackSource::Remote(parsed_url), duration_ms)
+        }
+    };
 
-    let (tx, rx) = oneshot::channel();
-    let _ = state.db_tx.send(DbRequest::LoadAudioCache { path: path.clone(), resp: tx });
-    let _ = rx.await;
+    // We skip LoadAudioCache since it's just for local files.
+    // In a real app we'd do a smarter history log here instead.
 
     let tx = state.audio_tx.lock().map_err(|e| e.to_string())?;
-    tx.send(AudioCommand::Load { path, title, artist, album }).map_err(|e| e.to_string())?;
+    tx.send(AudioCommand::Load { source: resolved_source, title, artist, album, duration_hint }).map_err(|e| e.to_string())?;
     
     Ok(())
 }

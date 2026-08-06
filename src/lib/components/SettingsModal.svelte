@@ -2,7 +2,34 @@
     import { invoke } from "@tauri-apps/api/core";
     import { libraryStore } from "$lib/stores/library.svelte";
 
+    import { onMount } from 'svelte';
+
     let { onClose } = $props<{ onClose: () => void }>();
+    
+    let keepPlayingOnClear = $state(false);
+    let loaded = $state(false);
+
+    onMount(async () => {
+        try {
+            const val = await invoke<string | null>("get_setting", { key: "keep_playing_on_queue_clear" });
+            keepPlayingOnClear = val === "true";
+        } catch (e) {
+            console.error("Failed to load setting:", e);
+        } finally {
+            loaded = true;
+        }
+    });
+
+    async function toggleKeepPlaying() {
+        if (!loaded) return;
+        keepPlayingOnClear = !keepPlayingOnClear;
+        try {
+            await invoke("set_setting", { key: "keep_playing_on_queue_clear", value: keepPlayingOnClear ? "true" : "false" });
+        } catch (e) {
+            console.error("Failed to save setting:", e);
+            keepPlayingOnClear = !keepPlayingOnClear; // Revert
+        }
+    }
 
     async function factoryReset() {
         // Tauri automatically intercepts native confirm/alert when the dialog plugin is active on the backend
@@ -36,7 +63,7 @@
                     <p style="font-size: 0.8rem; color: var(--echo-text-2); margin-top: 0.2rem;">Allow the current song to finish even if the upcoming queue is wiped.</p>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" checked />
+                    <input type="checkbox" checked={keepPlayingOnClear} onchange={toggleKeepPlaying} disabled={!loaded} />
                     <span class="slider round"></span>
                 </label>
             </div>
@@ -58,9 +85,9 @@
     .modal-overlay {
         position: fixed;
         top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
+        left: var(--sidebar-w, 80px);
+        right: var(--drawer-w, 0px);
+        bottom: 0;
         background: rgba(0,0,0,0.7);
         display: flex;
         justify-content: center;

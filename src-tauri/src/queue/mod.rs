@@ -6,17 +6,44 @@ pub mod recovery;
 
 pub mod commands;
 
+/// The audio source for a queued track — local file or remote stream.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type")]
+pub enum TrackSourceInfo {
+    Local {
+        track_id: i64,
+        file_path: String,
+        album_id: Option<i64>,
+    },
+    Remote {
+        provider_id: String,
+        remote_track_id: String,
+        stream_url: Option<String>,
+        quality_hint: Option<String>,
+        cover_art_url: Option<String>,
+        duration_ms: Option<u64>,
+    },
+}
+
 /// A track queued for playback
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueTrack {
     pub instance_id: String,      // Unique per queue session (UUID)
-    pub track_id: i64,            // FK to library.tracks
     pub title: String,
     pub artist: Option<String>,
-    pub file_path: String,
-    pub album_id: Option<i64>,
     pub track_number: Option<i64>,
+    pub source: TrackSourceInfo,
+}
+
+impl QueueTrack {
+    /// Returns the path or URL to pass directly to `load_audio`, if resolved.
+    pub fn playback_path(&self) -> Option<&str> {
+        match &self.source {
+            TrackSourceInfo::Local { file_path, .. } => Some(file_path),
+            TrackSourceInfo::Remote { stream_url, .. } => stream_url.as_deref(),
+        }
+    }
 }
 
 /// Repeat behavior
@@ -411,12 +438,14 @@ mod tests {
     fn make_track(id: &str) -> QueueTrack {
         QueueTrack {
             instance_id: id.to_string(),
-            track_id: id.parse().unwrap_or(1),
             title: format!("Track {}", id),
             artist: Some("Artist".to_string()),
-            file_path: format!("/path/to/{}.mp3", id),
-            album_id: Some(1),
             track_number: Some(1),
+            source: TrackSourceInfo::Local {
+                track_id: id.parse().unwrap_or(1),
+                file_path: format!("/path/to/{}.mp3", id),
+                album_id: Some(1),
+            },
         }
     }
 

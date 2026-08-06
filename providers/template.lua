@@ -10,7 +10,7 @@ provider.metadata = {
 -- 1. Discovery
 function provider.search(query, type)
     -- type could be "track", "album", or "artist"
-    -- Returns: { { id, title, artist, duration_ms, art_url }, ... }
+    -- Returns: { { id, title, artist, album, cover_art_url, stream_url }, ... }
 end
 
 -- 2. Playback Resolution (Called right before playback)
@@ -21,7 +21,7 @@ end
 -- 3. The Infinite Queue (The Algorithmic Radio)
 function provider.get_recommendations(seed_track_id)
     -- Returns an array of tracks similar to the seed
-    -- Returns: { { id, title, artist, duration_ms, art_url }, ... }
+    -- Returns: { { id, title, artist, album, cover_art_url, stream_url }, ... }
 end
 
 -- 4. Experience

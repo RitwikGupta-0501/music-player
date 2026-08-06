@@ -29,21 +29,17 @@
 
     $effect(() => {
         const track = audioStore.currentQueueTrack;
-        if (track) {
-            const trackId = (track as any).trackId ?? (track as any).track_id ?? track.id;
-            const filePath = (track as any).filePath ?? track.file_path;
-            if (trackId && filePath) {
-                libraryStore
-                    .getArtworkUrl(trackId, filePath)
-                    .then((url) => {
-                        playerArtUrl = url;
-                    })
-                    .catch(() => {
-                        playerArtUrl = null;
-                    });
-            } else {
-                playerArtUrl = null;
-            }
+        if (track && track.source.type === 'Local' && track.source.track_id && track.source.file_path) {
+            libraryStore
+                .getArtworkUrl(track.source.track_id, track.source.file_path)
+                .then((url) => {
+                    playerArtUrl = url;
+                })
+                .catch(() => {
+                    playerArtUrl = null;
+                });
+        } else if (track && track.source.type === 'Remote' && track.source.cover_art_url) {
+            playerArtUrl = track.source.cover_art_url;
         } else {
             playerArtUrl = null;
         }
@@ -279,9 +275,9 @@
 <style>
     /* CSS Variables matching user HTML */
     :global(body) {
-        --text-main: #eae8e3;
-        --muted: #7a7885;
-        --pill-bg: #1a1a1a;
+        --text-main: var(--echo-text-1);
+        --muted: var(--echo-text-2);
+        --pill-bg: var(--echo-surface);
     }
 
     .text-muted {
@@ -294,8 +290,8 @@
     .player-pill-container {
         position: fixed;
         bottom: 2rem;
-        left: 0;
-        right: 0;
+        left: var(--sidebar-w, 80px);
+        right: var(--drawer-w, 0px);
         height: 72px;
         z-index: 100;
         display: flex;

@@ -1,13 +1,12 @@
 <script lang="ts">
     import { List, House, Disc, PuzzlePiece, Gear } from "phosphor-svelte";
-    import { transitionLayout } from "$lib/utils/transitions";
     
     let { activeView = $bindable("albums") } = $props<{ activeView?: string }>();
     
     let sidebarOpen = $state(false);
 
     function toggleSidebar() {
-        transitionLayout(() => { sidebarOpen = !sidebarOpen; });
+        sidebarOpen = !sidebarOpen;
     }
 </script>
 
@@ -37,11 +36,11 @@
             </button>
             <button
                 class="nav-item"
-                class:active={activeView === "albums"}
+                class:active={activeView === "albums" || activeView === "playlists"}
                 onclick={() => activeView = "albums"}
             >
                 <div class="icon-container">
-                    <Disc size={24} weight={activeView === "albums" ? "fill" : "regular"} />
+                    <Disc size={24} weight={activeView === "albums" || activeView === "playlists" ? "fill" : "regular"} />
                 </div>
                 <span class="label">Library</span>
             </button>
@@ -88,6 +87,7 @@
         top: 0;
         user-select: none;
         width: 80px;
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         z-index: 30;
         flex-shrink: 0;
         overflow: hidden;
@@ -153,14 +153,8 @@
         font-weight: 400;
         font-style: italic;
         color: var(--echo-text-1);
-        opacity: 0;
         white-space: nowrap;
-        transition: opacity 0.3s ease;
         letter-spacing: 0.025em;
-    }
-
-    .sidebar.open .wordmark {
-        opacity: 1;
     }
 
     .sidebar-nav {
@@ -183,6 +177,7 @@
         transition: all 0.2s ease;
         width: 100%;
         text-align: left;
+        overflow: hidden;
     }
 
     .icon-container {
@@ -196,17 +191,11 @@
     }
     
     .label {
-        opacity: 0;
         white-space: nowrap;
-        transition: opacity 0.3s ease;
         font-size: 0.9375rem; /* 15px */
         font-weight: 500;
         font-family: var(--echo-font-body);
         letter-spacing: 0.025em;
-    }
-    
-    .sidebar.open .label {
-        opacity: 1;
     }
 
     .nav-item:hover:not(.active) {

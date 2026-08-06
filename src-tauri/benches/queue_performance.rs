@@ -1,15 +1,17 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use echo_desktop_lib::queue::{QueueState, QueueTrack, RepeatMode};
+use echo_desktop_lib::queue::{QueueState, QueueTrack, TrackSourceInfo, RepeatMode};
 
 fn make_track(id: &str) -> QueueTrack {
     QueueTrack {
         instance_id: id.to_string(),
-        track_id: id.parse().unwrap_or(1),
         title: format!("Track {}", id),
         artist: Some("Test Artist".to_string()),
-        file_path: format!("/path/to/{}.mp3", id),
-        album_id: Some(1),
         track_number: Some(1),
+        source: TrackSourceInfo::Local {
+            track_id: id.parse().unwrap_or(1),
+            file_path: format!("/path/to/{}.mp3", id),
+            album_id: Some(1),
+        },
     }
 }
 

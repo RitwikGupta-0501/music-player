@@ -6,7 +6,8 @@ use tauri::{AppHandle, Emitter};
 
 pub mod commands;
 pub mod media_controls;
-mod symphonia_source;
+pub mod symphonia_source;
+pub mod hls;
 
 use symphonia_source::SymphoniaSource;
 use media_controls::OSMediaControls;
@@ -19,12 +20,19 @@ pub struct PlayerSync {
     pub track: String,
 }
 
+#[derive(Clone)]
+pub enum TrackSource {
+    Local(std::path::PathBuf),
+    Remote(url::Url),
+}
+
 pub enum AudioCommand {
     Load {
-        path: String,
+        source: TrackSource,
         title: String,
         artist: Option<String>,
         album: Option<String>,
+        duration_hint: Option<u64>,
     },
     Play,
     Pause,
@@ -39,12 +47,15 @@ pub enum AudioCommand {
 pub fn start_audio_thread(
     rx: Receiver<AudioCommand>,
     app_handle: AppHandle,
+    reqwest_client: reqwest::Client,
+    runtime_handle: tauri::async_runtime::RuntimeHandle,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let (_stream, stream_handle) =
             OutputStream::try_default().expect("Failed to get audio output");
         let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink");
 
+        let mut current_track_source: Option<TrackSource> = None;
         let mut current_track_path = String::new();
         let mut current_duration: f64 = 0.0;
         let mut current_volume: f32 = 1.0;
@@ -70,21 +81,42 @@ pub fn start_audio_thread(
             if sink.empty() && !current_track_path.is_empty() {
                 let _ = app_handle.emit("track-ended", ());
                 current_track_path.clear();
+                current_track_source = None;
                 current_duration = 0.0;
                 media_controls.set_playback_status(false);
             }
 
             match rx.try_recv() {
                 Ok(cmd) => match cmd {
-                    AudioCommand::Load { path, title, artist, album } => {
+                    AudioCommand::Load { source, title, artist, album, duration_hint } => {
                         sink.stop();
-                        match SymphoniaSource::from_path(std::path::Path::new(&path)) {
+                        
+                        current_track_source = Some(source.clone());
+                        let src_result = match &source {
+                            TrackSource::Local(path) => {
+                                current_track_path = path.to_string_lossy().to_string();
+                                SymphoniaSource::from_path(path)
+                            },
+                            TrackSource::Remote(url) => {
+                                current_track_path = url.to_string();
+                                if url.path().ends_with(".m3u8") {
+                                    SymphoniaSource::from_hls(url.clone(), reqwest_client.clone(), runtime_handle.clone())
+                                } else {
+                                    SymphoniaSource::from_url(url.clone(), reqwest_client.clone(), runtime_handle.clone())
+                                }
+                            }
+                        };
+
+                        match src_result {
                             Ok(src) => {
-                                current_duration =
-                                    src.total_duration().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                                let reported = src.total_duration().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                                current_duration = if reported > 0.0 {
+                                    reported
+                                } else {
+                                    duration_hint.map(|ms| ms as f64 / 1000.0).unwrap_or(0.0)
+                                };
                                 sink.append(src);
                                 sink.play();
-                                current_track_path = path.clone();
                                 
                                 media_controls.update_metadata(
                                     &title,
@@ -132,6 +164,7 @@ pub fn start_audio_thread(
                     AudioCommand::Stop => {
                         sink.stop();
                         current_track_path.clear();
+                        current_track_source = None;
                         current_duration = 0.0;
                         media_controls.set_playback_status(false);
                         emit_sync(&app_handle, "Stopped", &sink, "", 0.0);
@@ -159,10 +192,23 @@ pub fn start_audio_thread(
                         let was_paused = sink.is_paused();
                         let seek_pos = Duration::from_secs_f64(pos);
 
-                        match SymphoniaSource::from_path_seeked(
-                            std::path::Path::new(&current_track_path),
-                            seek_pos,
-                        ) {
+                        let src_result = match &current_track_source {
+                            Some(TrackSource::Local(path)) => {
+                                SymphoniaSource::from_path_seeked(path, seek_pos)
+                            },
+                            Some(TrackSource::Remote(url)) => {
+                                if url.path().ends_with(".m3u8") {
+                                    SymphoniaSource::from_hls_seeked(url.clone(), reqwest_client.clone(), runtime_handle.clone(), seek_pos)
+                                } else {
+                                    SymphoniaSource::from_url_seeked(url.clone(), reqwest_client.clone(), runtime_handle.clone(), seek_pos)
+                                }
+                            },
+                            None => {
+                                continue;
+                            }
+                        };
+
+                        match src_result {
                             Ok(src) => {
                                 sink.stop();
                                 sink.append(src);

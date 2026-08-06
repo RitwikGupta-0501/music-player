@@ -280,3 +280,110 @@ pub fn remove_track_by_path(conn: &Connection, path: &str) -> Result<(), String>
 
     Ok(())
 }
+
+pub fn search_library(conn: &Connection, query: &str, limit: u32) -> Result<Vec<LocalTrack>, String> {
+    let mut tracks = Vec::new();
+    let like_query = format!("%{}%", query);
+    
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.title, t.artist, t.album_id, t.track_number, t.file_path 
+         FROM tracks t 
+         LEFT JOIN albums a ON t.album_id = a.id
+         WHERE t.title LIKE ?1 OR t.artist LIKE ?1 OR a.title LIKE ?1
+         ORDER BY t.title 
+         LIMIT ?2"
+    ).map_err(|e| e.to_string())?;
+
+    let track_iter = stmt.query_map(rusqlite::params![&like_query, &limit], |row| {
+        Ok(LocalTrack {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            artist: row.get(2)?,
+            album_id: row.get(3)?,
+            track_number: row.get(4)?,
+            file_path: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    for t in track_iter.flatten() {
+        tracks.push(t);
+    }
+    Ok(tracks)
+}
+
+pub fn sync_providers(conn: &Connection, providers: Vec<crate::ProviderInfo>) -> Result<(), String> {
+    for p in providers {
+        conn.execute(
+            "INSERT INTO providers (id, name, author, version, file_path, status, error_message, checksum, capabilities, homepage, settings_schema, priority, icon)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name,
+                author=excluded.author,
+                version=excluded.version,
+                file_path=excluded.file_path,
+                error_message=excluded.error_message,
+                checksum=excluded.checksum,
+                capabilities=excluded.capabilities,
+                homepage=excluded.homepage,
+                settings_schema=excluded.settings_schema,
+                priority=excluded.priority,
+                icon=excluded.icon,
+                updated_at=CURRENT_TIMESTAMP",
+            rusqlite::params![
+                p.id, p.name, p.author, p.version, p.file_path,
+                p.status, p.error_message, p.checksum,
+                p.capabilities.map(|c| serde_json::to_string(&c).unwrap_or_default()),
+                p.homepage, p.settings_schema, p.priority, p.icon
+            ],
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+pub fn get_providers(conn: &Connection) -> Result<Vec<crate::ProviderInfo>, String> {
+    let mut stmt = conn.prepare("SELECT id, name, author, version, file_path, status, error_message, checksum, capabilities, homepage, settings_schema, priority, icon, settings FROM providers").map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+
+    let mut providers = Vec::new();
+    while let Ok(Some(row)) = rows.next() {
+        let id: String = row.get(0).unwrap_or_default();
+        let capabilities_str: Option<String> = row.get(8).unwrap_or(None);
+        let capabilities: Option<Vec<String>> = capabilities_str.and_then(|s| serde_json::from_str(&s).ok());
+        
+        providers.push(crate::ProviderInfo {
+            id: id,
+            name: row.get(1).unwrap_or_default(),
+            author: row.get(2).unwrap_or_default(),
+            version: row.get(3).unwrap_or_default(),
+            file_path: row.get(4).unwrap_or_default(),
+            status: row.get(5).unwrap_or_else(|_| "enabled".to_string()),
+            error_message: row.get(6).unwrap_or(None),
+            checksum: row.get(7).unwrap_or(None),
+            capabilities,
+            homepage: row.get(9).unwrap_or(None),
+            settings_schema: row.get(10).unwrap_or(None),
+            priority: row.get(11).unwrap_or(0),
+            icon: row.get(12).unwrap_or(None),
+            settings: row.get(13).unwrap_or(None),
+        });
+    }
+
+    Ok(providers)
+}
+
+pub fn toggle_provider(conn: &Connection, provider_id: &str, enabled: bool) -> Result<(), String> {
+    let status = if enabled { "enabled" } else { "disabled" };
+    conn.execute(
+        "UPDATE providers SET status = ?1 WHERE id = ?2",
+        rusqlite::params![status, provider_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn save_provider_settings(conn: &Connection, provider_id: &str, settings_json: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE providers SET settings = ?1 WHERE id = ?2",
+        rusqlite::params![settings_json, provider_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}

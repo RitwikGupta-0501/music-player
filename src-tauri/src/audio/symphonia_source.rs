@@ -1,7 +1,42 @@
-use std::{fs::File, path::Path, time::Duration};
+use std::{fs::File, path::Path, time::Duration, io::{Read, Seek, SeekFrom}};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
+
+// ── StreamMediaSource Wrapper ───────────────────────────────────────────────
+
+pub struct StreamMediaSource<T> {
+    inner: T,
+    content_length: Option<u64>,
+}
+
+impl<T> StreamMediaSource<T> {
+    pub fn new(inner: T, content_length: Option<u64>) -> Self {
+        Self { inner, content_length }
+    }
+}
+
+impl<T: Read> Read for StreamMediaSource<T> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl<T: Seek> Seek for StreamMediaSource<T> {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
+impl<T: Read + Seek + Send + Sync> symphonia::core::io::MediaSource for StreamMediaSource<T> {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        self.content_length
+    }
+}
 
 use ringbuf::{Consumer, HeapRb};
 use rodio::Source;
@@ -15,6 +50,7 @@ use symphonia::core::{
     probe::Hint,
     units::Time,
 };
+use stream_download::{StreamDownload, Settings, http::HttpStream};
 
 pub struct SymphoniaSource {
     consumer: Consumer<i16, Arc<HeapRb<i16>>>,
@@ -27,25 +63,86 @@ pub struct SymphoniaSource {
 
 impl SymphoniaSource {
     pub fn from_path(path: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Self::open(path, None)
+        Self::open(Box::new(File::open(path)?), path.extension().and_then(|e| e.to_str()), None)
     }
 
     pub fn from_path_seeked(
         path: &Path,
         pos: Duration,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Self::open(path, Some(pos))
+        Self::open(Box::new(File::open(path)?), path.extension().and_then(|e| e.to_str()), Some(pos))
+    }
+
+    pub fn from_url(
+        url: url::Url,
+        client: reqwest::Client,
+        runtime_handle: tauri::async_runtime::RuntimeHandle,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::from_url_internal(url, client, runtime_handle, None)
+    }
+
+    pub fn from_url_seeked(
+        url: url::Url,
+        client: reqwest::Client,
+        runtime_handle: tauri::async_runtime::RuntimeHandle,
+        seek_to: Duration,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::from_url_internal(url, client, runtime_handle, Some(seek_to))
+    }
+
+    pub fn from_hls(
+        url: url::Url,
+        client: reqwest::Client,
+        runtime_handle: tauri::async_runtime::RuntimeHandle,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let stream = crate::audio::hls::HlsStream::new(url, client, runtime_handle, None)?;
+        Self::open(Box::new(stream), None, None)
+    }
+
+    pub fn from_hls_seeked(
+        url: url::Url,
+        client: reqwest::Client,
+        runtime_handle: tauri::async_runtime::RuntimeHandle,
+        seek_to: Duration,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        // HLS seeking is handled by skipping segments internally during instantiation
+        let stream = crate::audio::hls::HlsStream::new(url, client, runtime_handle, Some(seek_to))?;
+        // Pass seek_to = None to `open` so Symphonia doesn't try to byte-seek
+        Self::open(Box::new(stream), None, None)
+    }
+
+    fn from_url_internal(
+        url: url::Url,
+        client: reqwest::Client,
+        runtime_handle: tauri::async_runtime::RuntimeHandle,
+        seek_to: Option<Duration>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let (download, content_length) = runtime_handle.block_on(async {
+            use stream_download::source::SourceStream;
+            let stream = HttpStream::new(client, url.clone()).await?;
+            let content_length = stream.content_length();
+            let settings = Settings::default().prefetch_bytes(5 * 1024 * 1024); // 5MB buffer
+            
+            // Use TempStorageProvider instead of BoundedStorageProvider to avoid subtraction overflow
+            // panics when the MP4 demuxer seeks backward from the end of the file.
+            let storage = stream_download::storage::temp::TempStorageProvider::new();
+            
+            let download = StreamDownload::from_stream(stream, storage, settings).await?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>((download, content_length))
+        })?;
+        let wrapper = StreamMediaSource::new(download, content_length); // Pass the fetched content length
+        Self::open(Box::new(wrapper), None, seek_to)
     }
 
     fn open(
-        path: &Path,
+        media_source: Box<dyn symphonia::core::io::MediaSource>,
+        extension: Option<&str>,
         seek_to: Option<Duration>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let file = File::open(path)?;
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let mss = MediaSourceStream::new(media_source, Default::default());
 
         let mut hint = Hint::new();
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if let Some(ext) = extension {
             hint.with_extension(ext);
         }
 

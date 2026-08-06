@@ -3,7 +3,7 @@
     import { audioStore } from "$lib/stores/audio.svelte";
     import { DotsThree, Play, Plus, Waveform } from "phosphor-svelte";
 
-    let { album } = $props<{ album: Album; }>();
+    let { album, onBack } = $props<{ album: Album; onBack: () => void }>();
 
     let tracks = $state<LocalTrack[]>([]);
     let artUrl = $state<string | null>(null);
@@ -92,7 +92,12 @@
                 <div class="track-left">
                     <div class="track-status">
                         {#if audioStore.currentTrack === track.title || audioStore.currentTrack === track.file_path}
-                            <Waveform size={18} weight="bold" class="playing-icon" />
+                            <div class="playing-visualizer">
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                            </div>
                         {:else}
                             <span class="track-number">{track.track_number || i + 1}</span>
                             <Play size={18} weight="fill" class="track-play-icon" />
@@ -118,6 +123,28 @@
                             class="dropdown glass"
                             onclick={(e) => e.stopPropagation()}
                         >
+                            <button
+                                class="dropdown-row"
+                                onclick={(e) => {
+                                    e.stopPropagation();
+                                    audioStore.playNext(track);
+                                    activeDropdown = null;
+                                }}
+                            >
+                                Play next
+                            </button>
+                            <button
+                                class="dropdown-row"
+                                onclick={(e) => {
+                                    e.stopPropagation();
+                                    audioStore.addToQueue(track);
+                                    activeDropdown = null;
+                                }}
+                            >
+                                Add to queue
+                            </button>
+                            <div class="dropdown-divider"></div>
+
                             {#if libraryStore.playlists.length > 0}
                                 <div class="dropdown-section-label">Add to playlist</div>
                                 {#each libraryStore.playlists as playlist}
@@ -256,7 +283,7 @@
         display: block;
     }
 
-    .track-play-icon {
+    :global(.track-play-icon) {
         display: none;
         color: var(--echo-primary-dark);
     }
@@ -265,7 +292,7 @@
         display: none;
     }
 
-    .track-row:not(.active):hover .track-play-icon {
+    .track-row:not(.active):hover :global(.track-play-icon) {
         display: block;
     }
 
@@ -281,18 +308,66 @@
         color: #ffffff;
     }
 
+    .track-row.active    .track-number {
+        width: 1.5rem;
+        text-align: right;
+        color: var(--echo-text-3);
+        font-variant-numeric: tabular-nums;
+        font-size: 0.875rem;
+    }
+
+    .playing-visualizer {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        gap: 2px;
+        height: 14px;
+        width: 1.5rem;
+    }
+
+    .playing-visualizer .bar {
+        width: 3px;
+        background-color: var(--echo-primary-dark);
+        border-radius: 2px;
+        transform-origin: bottom;
+    }
+
+    .playing-visualizer .bar:nth-child(1) { height: 100%; animation: eq-bar-1 1.2s ease-in-out infinite; }
+    .playing-visualizer .bar:nth-child(2) { height: 100%; animation: eq-bar-2 1.5s ease-in-out infinite; }
+    .playing-visualizer .bar:nth-child(3) { height: 100%; animation: eq-bar-3 1.1s ease-in-out infinite; }
+    .playing-visualizer .bar:nth-child(4) { height: 100%; animation: eq-bar-4 1.4s ease-in-out infinite; }
+
+    @keyframes eq-bar-1 {
+        0%, 100% { transform: scaleY(0.3); }
+        25% { transform: scaleY(0.9); }
+        50% { transform: scaleY(0.5); }
+        75% { transform: scaleY(1.0); }
+    }
+
+    @keyframes eq-bar-2 {
+        0%, 100% { transform: scaleY(0.6); }
+        25% { transform: scaleY(0.2); }
+        50% { transform: scaleY(1.0); }
+        75% { transform: scaleY(0.4); }
+    }
+
+    @keyframes eq-bar-3 {
+        0%, 100% { transform: scaleY(0.8); }
+        25% { transform: scaleY(0.4); }
+        50% { transform: scaleY(0.9); }
+        75% { transform: scaleY(0.3); }
+    }
+
+    @keyframes eq-bar-4 {
+        0%, 100% { transform: scaleY(0.4); }
+        25% { transform: scaleY(1.0); }
+        50% { transform: scaleY(0.3); }
+        75% { transform: scaleY(0.8); }
+    }
+
     .track-row.active .track-status,
     .track-row.active .track-name {
         color: var(--echo-primary-dark); /* text-[#B58E62] */
-    }
-
-    .playing-icon {
-        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
-
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: .5; }
     }
 
     .track-right {

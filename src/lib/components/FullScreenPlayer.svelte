@@ -16,18 +16,14 @@
 
     $effect(() => {
         const track = audioStore.currentQueueTrack;
-        if (track) {
-            const trackId = (track as any).trackId ?? (track as any).track_id ?? track.id;
-            const filePath = (track as any).filePath ?? track.file_path;
-            if (trackId && filePath) {
-                libraryStore.getArtworkUrl(trackId, filePath).then(url => {
-                    artUrl = url;
-                }).catch(() => {
-                    artUrl = null;
-                });
-            } else {
+        if (track && track.source.type === 'Local' && track.source.track_id && track.source.file_path) {
+            libraryStore.getArtworkUrl(track.source.track_id, track.source.file_path).then(url => {
+                artUrl = url;
+            }).catch(() => {
                 artUrl = null;
-            }
+            });
+        } else if (track && track.source.type === 'Remote' && track.source.cover_art_url) {
+            artUrl = track.source.cover_art_url;
         } else {
             artUrl = null;
         }

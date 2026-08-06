@@ -84,13 +84,24 @@ pub async fn clear_queue(
     app_handle: AppHandle,
     state: State<'_, crate::AppState>,
 ) -> Result<QueueChangeEvent, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let _ = state.db_tx.send(crate::db::DbRequest::GetSetting {
+        key: "keep_playing_on_queue_clear".to_string(),
+        resp: tx,
+    });
+    
+    let keep_playing = match rx.await {
+        Ok(Ok(Some(val))) => val == "true",
+        _ => false,
+    };
+
     let mut queue = state.queue.lock().map_err(|e| e.to_string())?;
     queue.clear()?;
 
-    // TODO: Add an option in settings to "Keep current song playing" when clearing the queue.
-    // For now, clearing the queue immediately stops playback to match the UI state.
-    if let Ok(tx) = state.audio_tx.lock() {
-        let _ = tx.send(crate::audio::AudioCommand::Stop);
+    if !keep_playing {
+        if let Ok(tx) = state.audio_tx.lock() {
+            let _ = tx.send(crate::audio::AudioCommand::Stop);
+        }
     }
 
     let event = queue_to_event(&queue);
@@ -354,16 +365,19 @@ pub async fn reshuffle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::queue::TrackSourceInfo;
 
     fn make_track(id: &str) -> QueueTrack {
         QueueTrack {
             instance_id: id.to_string(),
-            track_id: id.parse().unwrap_or(1),
             title: format!("Track {}", id),
             artist: Some("Artist".to_string()),
-            file_path: format!("/path/to/{}.mp3", id),
-            album_id: Some(1),
             track_number: Some(1),
+            source: TrackSourceInfo::Local {
+                track_id: id.parse().unwrap_or(1),
+                file_path: format!("/path/to/{}.mp3", id),
+                album_id: Some(1),
+            },
         }
     }
 

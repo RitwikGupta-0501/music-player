@@ -32,10 +32,11 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rodio = "0.19.0"
-tokio = { version = "1.52.1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "macros", "sync", "full"] }
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 mlua = { version = "0.11.6", features = ["lua54", "vendored", "async", "serialize", "send"] }
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls"] }
+url = "2"
 walkdir = "2.5.0"
 symphonia = { version = "0.5", features = ["mp3", "flac", "wav", "isomp4", "ogg", "aac", "alac", "vorbis", "pcm"] }
 rand = "0.8"
@@ -45,3 +46,9 @@ lazy_static = "1.4"
 ringbuf = "0.3"
 souvlaki = "0.7.3"
 regex = "1.10"
+strsim = "0.11"
+stream-download = { version = "0.24.1", default-features = false, features = ["reqwest-rustls", "temp-storage"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+m3u8-rs = "6.0.1"
+bytes = "1.12.1"
+sha2 = "0.11.0"

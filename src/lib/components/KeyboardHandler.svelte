@@ -71,6 +71,9 @@
                     // The +page.svelte can listen for this
                     document.dispatchEvent(new CustomEvent('echo:escape'));
                     break;
+                case 'search':
+                    document.dispatchEvent(new CustomEvent('echo:search'));
+                    break;
             }
         }
 

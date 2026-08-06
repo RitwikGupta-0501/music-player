@@ -50,17 +50,206 @@ pub struct AppState {
     pub audio_thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
     pub db_thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
     pub queue: std::sync::Mutex<QueueState>,
+    pub reqwest_client: reqwest::Client,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct ProviderInfo {
+    pub id: String,
+    pub name: String,
+    pub author: String,
+    pub version: String,
+    pub file_path: String,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub checksum: Option<String>,
+    pub capabilities: Option<Vec<String>>,
+    pub homepage: Option<String>,
+    pub settings_schema: Option<String>,
+    pub priority: i32,
+    pub icon: Option<String>,
+    pub settings: Option<String>,
 }
 
 #[tauri::command]
-async fn search_provider(state: State<'_, AppState>, query: String) -> Result<Vec<TrackResult>, String> {
+async fn sync_providers(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let mut providers = Vec::new();
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let providers_dir = app_data_dir.join("providers");
+    
+    if !providers_dir.exists() {
+        let _ = std::fs::create_dir_all(&providers_dir);
+    }
+    
+    // We parse the Lua metadata using regex to avoid spinning up a full VM for every file
+    let re_id = regex::Regex::new(r#"id\s*=\s*"([^"]+)""#).unwrap();
+    let re_name = regex::Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap();
+    let re_author = regex::Regex::new(r#"author\s*=\s*"([^"]+)""#).unwrap();
+    let re_version = regex::Regex::new(r#"version\s*=\s*"([^"]+)""#).unwrap();
+    let re_homepage = regex::Regex::new(r#"homepage\s*=\s*"([^"]+)""#).unwrap();
+    let re_settings = regex::Regex::new(r#"settings_schema\s*=\s*"([^"]+)""#).unwrap();
+    let re_priority = regex::Regex::new(r#"priority\s*=\s*([0-9]+)"#).unwrap();
+    let re_icon = regex::Regex::new(r#"icon\s*=\s*"([^"]+)""#).unwrap();
+    // Simplified capabilities parser - expects a simple lua array of strings
+    let re_capabilities = regex::Regex::new(r#"capabilities\s*=\s*\{([^}]+)\}"#).unwrap();
+
+    if let Ok(entries) = std::fs::read_dir(&providers_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("lua") {
+                let fallback_id = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+                
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                use sha2::{Sha256, Digest};
+                let mut hasher = Sha256::new();
+                hasher.update(content.as_bytes());
+                let checksum = Some(hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>());
+                
+                let id = re_id.captures(&content).and_then(|c| c.get(1)).map(|m| m.as_str().to_string()).unwrap_or(fallback_id);
+                let name = re_name.captures(&content).and_then(|c| c.get(1)).map(|m| m.as_str().to_string()).unwrap_or(id.clone());
+                let author = re_author.captures(&content).and_then(|c| c.get(1)).map(|m| m.as_str().to_string()).unwrap_or_else(|| "Unknown".to_string());
+                let version = re_version.captures(&content).and_then(|c| c.get(1)).map(|m| m.as_str().to_string()).unwrap_or_else(|| "0.0.0".to_string());
+                let homepage = re_homepage.captures(&content).and_then(|c| c.get(1)).map(|m| m.as_str().to_string());
+                let settings_schema = re_settings.captures(&content).and_then(|c| c.get(1)).map(|m| m.as_str().to_string());
+                let priority = re_priority.captures(&content).and_then(|c| c.get(1)).and_then(|m| m.as_str().parse::<i32>().ok()).unwrap_or(0);
+                let icon = re_icon.captures(&content).and_then(|c| c.get(1)).map(|m| m.as_str().to_string());
+                
+                let capabilities = re_capabilities.captures(&content).and_then(|c| c.get(1)).map(|m| {
+                    m.as_str().split(',')
+                        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<String>>()
+                });
+                
+                providers.push(ProviderInfo {
+                    id,
+                    name,
+                    author,
+                    version,
+                    file_path: path.to_string_lossy().into_owned(),
+                    status: "enabled".to_string(), // Default when inserting, preserved on update by SQL
+                    error_message: None,
+                    checksum,
+                    capabilities,
+                    homepage,
+                    settings_schema,
+                    priority,
+                    icon,
+                    settings: None,
+                });
+            }
+        }
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.db_tx.send(crate::db::DbRequest::SyncProviders { providers, resp: tx }).map_err(|e| e.to_string())?;
+    rx.await.map_err(|e| e.to_string())??;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_providers(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.db_tx.send(crate::db::DbRequest::GetProviders { resp: tx }).map_err(|e| e.to_string())?;
+    let providers = rx.await.map_err(|e| e.to_string())??;
+    
+    let mut manager = state.provider_manager.lock().await;
+    manager.sync_registry(providers.clone());
+    
+    Ok(providers)
+}
+
+#[tauri::command]
+async fn toggle_provider(
+    provider_id: String,
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    state.db_tx.send(crate::db::DbRequest::ToggleProvider { 
+        provider_id, 
+        enabled, 
+        resp: tx 
+    }).map_err(|e| e.to_string())?;
+    rx.await.map_err(|e| e.to_string())??;
+    Ok(())
+}
+
+#[tauri::command]
+async fn save_provider_settings(
+    provider_id: String,
+    settings_json: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    state.db_tx.send(crate::db::DbRequest::SaveProviderSettings {
+        provider_id,
+        settings_json,
+        resp: tx,
+    }).map_err(|e| e.to_string())?;
+    
+    rx.await.map_err(|e| e.to_string())??;
+    Ok(())
+}
+
+#[tauri::command]
+async fn search_provider(state: State<'_, AppState>, provider_id: String, query: String) -> Result<Vec<TrackResult>, String> {
     let manager = state.provider_manager.lock().await;
     let results = manager
-        .search(&query)
+        .search(&provider_id, &query)
         .await
         .map_err(|e| e.to_string())?;
 
     Ok(results)
+}
+
+#[tauri::command]
+async fn get_provider_config(
+    state: State<'_, AppState>,
+    provider_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    let secret_store = providers::secrets::ProviderSecretStore::new();
+    Ok(secret_store.get(&provider_id, &key, &state.db_tx))
+}
+
+#[tauri::command]
+async fn set_provider_config(
+    state: State<'_, AppState>,
+    provider_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let secret_store = providers::secrets::ProviderSecretStore::new();
+    secret_store.set(&provider_id, &key, &value, &state.db_tx)
+}
+
+#[tauri::command]
+async fn search_library(state: State<'_, AppState>, query: String, limit: u32) -> Result<Vec<LocalTrack>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.db_tx.send(DbRequest::SearchLibrary { query, limit, resp: tx }).map_err(|e| e.to_string())?;
+    rx.await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn fuzzy_match_tracks(local_track: LocalTrack, remote_tracks: Vec<providers::TrackResult>) -> Vec<providers::TrackResult> {
+    let mut matches = Vec::new();
+    let local_title = local_track.title.to_lowercase();
+    let local_artist = local_track.artist.unwrap_or_default().to_lowercase();
+
+    for remote in remote_tracks {
+        let remote_title = remote.title.to_lowercase();
+        let remote_artist = remote.artist.to_lowercase();
+        
+        let title_sim = strsim::jaro_winkler(&local_title, &remote_title);
+        let artist_sim = strsim::jaro_winkler(&local_artist, &remote_artist);
+        
+        if title_sim > 0.85 && artist_sim > 0.85 {
+            matches.push(remote);
+        }
+    }
+    matches
 }
 
 #[tauri::command]
@@ -81,7 +270,7 @@ async fn scan_local_directory(state: State<'_, AppState>, path: String) -> Resul
                         let mut artist = None;
                         let mut album = None;
                         let mut track_number = None;
-                        if let Ok(file) = std::fs::File::open(&entry_path) {
+                        if let Ok(file) = std::fs::File::open(entry_path) {
                             let mss = MediaSourceStream::new(Box::new(file), Default::default());
                             let mut hint = Hint::new();
                             hint.with_extension(&ext);
@@ -413,6 +602,32 @@ async fn sync_playback_state(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn open_in_file_explorer(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::builder()
@@ -428,9 +643,28 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             let handle = app.handle().clone();
             
+            // Setup shared reqwest client with strict redirect/SSRF policy and timeouts
+            let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= 10 {
+                    return attempt.stop();
+                }
+                if crate::providers::check_url_allowed(attempt.url().as_str()).is_err() {
+                    attempt.stop()
+                } else {
+                    attempt.follow()
+                }
+            });
+            let reqwest_client = reqwest::Client::builder()
+                .redirect(redirect_policy)
+                .timeout(std::time::Duration::from_secs(30))
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .build()
+                .expect("Failed to build reqwest client");
+
             let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
             let db_dir = app_data_dir.join("database");
             let providers_dir = app_data_dir.join("providers");
@@ -473,13 +707,8 @@ pub fn run() {
                 }
             }
 
-            let dummy_script = providers_dir.join("dummy_search.lua");
-            // Fallback to empty string if dummy_search doesn't exist to prevent crash on boot
-            if !dummy_script.exists() {
-                let _ = std::fs::write(&dummy_script, "return { search = function(q) return {} end }");
-            }
-            let provider_manager = ProviderManager::new(&dummy_script).expect("Failed to init Lua sandbox");
-            let audio_thread_handle = audio::start_audio_thread(audio_rx, handle);
+            let provider_manager = ProviderManager::new(reqwest_client.clone());
+            let audio_thread_handle = audio::start_audio_thread(audio_rx, handle, reqwest_client.clone(), tauri::async_runtime::handle());
 
             app.manage(AppState {
                 audio_tx: std::sync::Mutex::new(audio_tx),
@@ -488,6 +717,7 @@ pub fn run() {
                 audio_thread: std::sync::Mutex::new(Some(audio_thread_handle)),
                 db_thread: std::sync::Mutex::new(Some(db_thread_handle)),
                 queue: std::sync::Mutex::new(recovered_queue),
+                reqwest_client,
             });
             
             Ok(())
@@ -500,7 +730,15 @@ pub fn run() {
             audio::commands::seek_audio,
             audio::commands::set_volume,
             audio::commands::set_mute,
+            get_providers,
+            toggle_provider,
+            save_provider_settings,
+            sync_providers,
+            get_provider_config,
+            set_provider_config,
             search_provider,
+            search_library,
+            fuzzy_match_tracks,
             scan_local_directory,
             get_local_tracks,
             get_albums,
@@ -543,7 +781,9 @@ pub fn run() {
             get_feature_flags,
             is_feature_enabled,
             set_feature_enabled,
+            toggle_provider,
             sync_playback_state,
+            open_in_file_explorer,
         ]);
 
     builder

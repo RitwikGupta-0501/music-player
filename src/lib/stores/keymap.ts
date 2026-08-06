@@ -35,6 +35,7 @@ export type KeyAction =
     | 'volumeDown'
     | 'toggleShuffle'
     | 'cycleRepeat'
+    | 'search'
     | 'escape';
 
 /** Default keymap — these are the factory defaults */
@@ -88,6 +89,11 @@ export const DEFAULT_KEYMAP: Record<KeyAction, KeymapEntry> = {
         label: 'Close / Back',
         action: 'escape',
         binding: { key: 'Escape' },
+    },
+    search: {
+        label: 'Global Search',
+        action: 'search',
+        binding: { key: 'k', ctrl: true },
     },
 };
 

@@ -34,6 +34,11 @@ pub enum DbRequest {
     InsertTracks { tracks: Vec<TrackData>, resp: oneshot::Sender<Result<usize, String>> },
     LoadAudioCache { path: String, resp: oneshot::Sender<Result<(), String>> },
     RemoveTrackByPath { path: String, resp: oneshot::Sender<Result<(), String>> },
+    SearchLibrary { query: String, limit: u32, resp: oneshot::Sender<Result<Vec<LocalTrack>, String>> },
+    SyncProviders { providers: Vec<crate::ProviderInfo>, resp: oneshot::Sender<Result<(), String>> },
+    GetProviders { resp: oneshot::Sender<Result<Vec<crate::ProviderInfo>, String>> },
+    ToggleProvider { provider_id: String, enabled: bool, resp: oneshot::Sender<Result<(), String>> },
+    SaveProviderSettings { provider_id: String, settings_json: String, resp: oneshot::Sender<Result<(), String>> },
     Quit,
 }
 
@@ -94,6 +99,21 @@ pub fn start_db_thread(mut conn: Connection, rx: Receiver<DbRequest>) -> std::th
                 }
                 DbRequest::RemoveTrackByPath { path, resp } => {
                     let _ = resp.send(queries::remove_track_by_path(&conn, &path));
+                }
+                DbRequest::SearchLibrary { query, limit, resp } => {
+                    let _ = resp.send(queries::search_library(&conn, &query, limit));
+                }
+                DbRequest::SyncProviders { providers, resp } => {
+                    let _ = resp.send(queries::sync_providers(&conn, providers));
+                }
+                DbRequest::GetProviders { resp } => {
+                    let _ = resp.send(queries::get_providers(&conn));
+                }
+                DbRequest::ToggleProvider { provider_id, enabled, resp } => {
+                    let _ = resp.send(queries::toggle_provider(&conn, &provider_id, enabled));
+                }
+                DbRequest::SaveProviderSettings { provider_id, settings_json, resp } => {
+                    let _ = resp.send(queries::save_provider_settings(&conn, &provider_id, &settings_json));
                 }
                 DbRequest::Quit => {
                     break;

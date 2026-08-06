@@ -16,15 +16,27 @@ interface QueueChangePayload {
     queue_mode: string;
 }
 
+interface TrackSource {
+    type: 'Local' | 'Remote';
+    // Local fields
+    track_id?: number;
+    file_path?: string;
+    album_id?: number | null;
+    // Remote fields
+    provider_id?: string;
+    remote_track_id?: string;
+    stream_url?: string | null;
+    quality_hint?: string | null;
+    cover_art_url?: string | null;
+    duration_ms?: number | null;
+}
+
 export interface QueueTrack {
     instanceId: string;
-    track_id?: number;  // Optional for compatibility
-    id?: number;         // Alias for track_id
     title: string;
     artist: string | null;
-    file_path: string;
-    album_id?: number | null;
-    track_number?: number | null;
+    trackNumber?: number | null;
+    source: TrackSource;
 }
 
 export class AudioStore {
@@ -262,28 +274,47 @@ export class AudioStore {
     // QUEUE COMMANDS (All via backend)
     // ══════════════════════════════════════════
 
+    private formatQueueTrack(t: any): QueueTrack {
+        const instanceId = crypto.randomUUID();
+        const isRemote = !!(t.stream_url);
+        const source: TrackSource = isRemote
+            ? {
+                type: 'Remote',
+                provider_id: t.provider_id ?? 'unknown',
+                stream_url: t.stream_url,
+                quality_hint: t.quality_hint ?? null,
+                cover_art_url: t.cover_art_url ?? null,
+                duration_ms: t.duration_ms ?? null,
+            }
+            : {
+                type: 'Local',
+                track_id: t.id ?? t.track_id ?? t.trackId ?? -1,
+                file_path: t.file_path ?? t.filePath ?? '',
+                album_id: t.album_id ?? t.albumId ?? null,
+            };
+
+        return {
+            instanceId,
+            title: t.title,
+            artist: t.artist ?? null,
+            trackNumber: t.track_number ?? t.trackNumber ?? null,
+            source,
+        };
+    }
+
     async setQueue(tracks: any[], startIndex: number = 0) {
         try {
-            // Map frontend snake_case to backend camelCase
-            const tracksWithIds = tracks.map((t) => ({
-                instanceId: crypto.randomUUID(),
-                trackId: t.id ?? t.track_id ?? t.trackId,
-                title: t.title,
-                artist: t.artist,
-                filePath: t.file_path ?? t.filePath,
-                albumId: t.album_id ?? t.albumId,
-                trackNumber: t.track_number ?? t.trackNumber,
-            }));
+            const tracksWithIds = tracks.map((t) => this.formatQueueTrack(t));
             await invoke("set_queue", { tracks: tracksWithIds, startIndex });
 
-            // Load the first track
+            // Load the first track immediately
             if (tracksWithIds.length > startIndex) {
                 const t = tracksWithIds[startIndex];
-                await invoke("load_audio", { 
-                    path: t.filePath,
+                await invoke("load_audio", {
+                    source: t.source,
                     title: t.title,
                     artist: t.artist || null,
-                    album: null 
+                    album: null
                 });
             }
         } catch (e) {
@@ -293,18 +324,28 @@ export class AudioStore {
 
     async addToQueue(track: any) {
         try {
-            const trackWithId = { 
-                instanceId: crypto.randomUUID(),
-                trackId: track.id ?? track.track_id ?? track.trackId,
-                title: track.title,
-                artist: track.artist,
-                filePath: track.file_path ?? track.filePath,
-                albumId: track.album_id ?? track.albumId,
-                trackNumber: track.track_number ?? track.trackNumber,
-            };
+            const trackWithId = this.formatQueueTrack(track);
             await invoke("add_to_queue", { track: trackWithId });
         } catch (e) {
             console.error("Add to queue failed:", e);
+        }
+    }
+
+    async playNext(track: any) {
+        try {
+            const trackWithId = this.formatQueueTrack(track);
+            const event = await invoke<QueueChangePayload>("add_to_queue", { track: trackWithId });
+            
+            if (event && event.tracks && event.tracks.length > 1) {
+                const fromIndex = event.tracks.length - 1;
+                const toIndex = Math.min(event.current_position + 1, event.tracks.length - 1);
+                
+                if (fromIndex !== toIndex) {
+                    await invoke("reorder_queue", { fromIndex, toIndex });
+                }
+            }
+        } catch (e) {
+            console.error("Play next failed:", e);
         }
     }
 
@@ -321,8 +362,8 @@ export class AudioStore {
             const event = await invoke<QueueChangePayload>("skip_forward", { count });
             if (event.current_track) {
                 const t = event.current_track;
-                await invoke("load_audio", { 
-                    path: t.file_path,
+                await invoke("load_audio", {
+                    source: t.source,
                     title: t.title,
                     artist: t.artist || null,
                     album: null
@@ -338,8 +379,8 @@ export class AudioStore {
             const event = await invoke<QueueChangePayload>("skip_backward", { count });
             if (event.current_track) {
                 const t = event.current_track;
-                await invoke("load_audio", { 
-                    path: t.file_path,
+                await invoke("load_audio", {
+                    source: t.source,
                     title: t.title,
                     artist: t.artist || null,
                     album: null
@@ -357,8 +398,8 @@ export class AudioStore {
             });
             if (event.current_track) {
                 const t = event.current_track;
-                await invoke("load_audio", { 
-                    path: t.file_path,
+                await invoke("load_audio", {
+                    source: t.source,
                     title: t.title,
                     artist: t.artist || null,
                     album: null

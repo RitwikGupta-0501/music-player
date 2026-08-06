@@ -2,17 +2,24 @@
     import { libraryStore, type Playlist } from "$lib/stores/library.svelte";
     import { flip } from "svelte/animate";
     import { cubicOut } from "svelte/easing";
+    import { Plus, ListPlus } from "phosphor-svelte";
+    import LibraryHeader from "./LibraryHeader.svelte";
+    import PromptModal from "./PromptModal.svelte";
 
-    let { onSelectPlaylist } = $props<{ onSelectPlaylist: (p: Playlist) => void }>();
+    let { activeView = $bindable("playlists"), onSelectPlaylist } = $props<{ activeView?: string, onSelectPlaylist: (p: Playlist) => void }>();
 
-    let newPlaylistName = $state("");
     let mosaics = $state<Record<number, string[]>>({});
+    let promptOpen = $state(false);
 
-    async function handleCreate() {
-        if (!newPlaylistName.trim()) return;
-        await libraryStore.createPlaylist(newPlaylistName);
-        newPlaylistName = "";
+    async function handleCreate(name: string) {
+        if (!name || !name.trim()) return;
+        await libraryStore.createPlaylist(name.trim());
+        promptOpen = false;
         await loadMosaics();
+    }
+
+    function handleCreatePrompt() {
+        promptOpen = true;
     }
 
     async function loadMosaics() {
@@ -30,41 +37,31 @@
     });
 </script>
 
-<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem;">
-    <div>
-        <h2 class="text-cyan" style="font-size: 2.5rem; margin-bottom: 0.5rem;">Playlists</h2>
-        <span class="text-muted">{libraryStore.playlists.length} Playlists</span>
-    </div>
-    
-    <div style="display: flex; gap: 0.5rem;">
-        <input
-            type="text"
-            bind:value={newPlaylistName}
-            placeholder="New playlist name..."
-            spellcheck="false"
-            style="width: 250px;"
-        />
-        <button class="primary" onclick={handleCreate}>
-            Create
-        </button>
-    </div>
-</div>
+<LibraryHeader bind:activeView>
+    {#snippet actions()}
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <span class="text-muted">{libraryStore.playlists.length} Playlists</span>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="ghost" onclick={handleCreatePrompt}>
+                    <Plus size={16} />
+                    New Playlist
+                </button>
+            </div>
+        </div>
+    {/snippet}
+</LibraryHeader>
 
 {#if libraryStore.playlists.length === 0}
     <div class="empty-state">
-        <p class="text-muted" style="font-size: 1.1rem; margin-bottom: 1.5rem;">No playlists yet. Create your first one!</p>
-        <div style="display: flex; gap: 0.5rem;">
-            <input
-                type="text"
-                bind:value={newPlaylistName}
-                placeholder="My Playlist"
-                spellcheck="false"
-                style="width: 250px;"
-            />
-            <button class="primary" onclick={handleCreate} disabled={!newPlaylistName.trim()}>
-                Create
-            </button>
+        <div class="empty-icon">
+            <ListPlus size={48} weight="thin" />
         </div>
+        <h2 class="empty-heading font-headline-lg">You have no playlists</h2>
+        <p class="empty-sub">Create a playlist to organize your favorite tracks.</p>
+        <button class="ghost" onclick={handleCreatePrompt} style="margin-top: 1.75rem;">
+            <Plus size={16} />
+            Create Playlist
+        </button>
     </div>
 {:else}
     <div class="playlist-grid">
@@ -74,7 +71,6 @@
             <div 
                 class="playlist-card glass-panel" 
                 onclick={() => onSelectPlaylist(playlist)}
-                style:view-transition-name="playlist-{playlist.id}"
             >
                 <div class="art">
                     {#if mosaics[playlist.id] && mosaics[playlist.id].length >= 4}
@@ -94,6 +90,15 @@
             </div>
         {/each}
     </div>
+{/if}
+
+{#if promptOpen}
+    <PromptModal
+        title="Create Playlist"
+        defaultValue="New Playlist"
+        onSubmit={handleCreate}
+        onClose={() => promptOpen = false}
+    />
 {/if}
 
 <style>
@@ -146,6 +151,28 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        height: 50vh;
+        min-height: 65vh;
+        text-align: center;
+        gap: 0.5rem;
+    }
+
+    .empty-icon {
+        color: var(--echo-text-3);
+        margin-bottom: 1.25rem;
+        opacity: 0.6;
+    }
+
+    .empty-heading {
+        font-size: 2rem;
+        font-weight: 500;
+        color: var(--echo-text-1);
+        letter-spacing: -0.025em;
+    }
+
+    .empty-sub {
+        font-size: 1rem;
+        color: var(--echo-text-2);
+        max-width: 280px;
+        line-height: 1.6;
     }
 </style>

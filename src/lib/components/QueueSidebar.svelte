@@ -1,7 +1,6 @@
 <script lang="ts">
     import { audioStore } from "$lib/stores/audio.svelte";
-    // @ts-ignore - svelte-virtual-list lacks type definitions
-    import VirtualList from "svelte-virtual-list";
+    import { createVirtualizer } from "@tanstack/svelte-virtual";
     import { X, Trash, Pause, Play } from "phosphor-svelte";
     let { open = $bindable(false) } = $props<{ open?: boolean }>();
 
@@ -9,6 +8,18 @@
     let dragoverIndex = $state(-1);
     let justReorderedIndex = $state(-1);
     let isLoading = $state(false);
+
+    let scrollContainer = $state<HTMLElement | null>(null);
+
+    let virtStore = $derived.by(() => {
+        const container = scrollContainer;
+        return createVirtualizer({
+            count: audioStore.queue.length,
+            getScrollElement: () => container,
+            estimateSize: () => 52,
+            overscan: 5,
+        });
+    });
 
     let queueWithIndex = $derived(
         audioStore.queue.map((track, i) => ({ track, index: i }))
@@ -18,13 +29,11 @@
         audioStore.jumpToTrack(instanceId);
     }
 
-    async function handleDragStart(e: DragEvent, index: number) {
+    function handleDragStart(e: DragEvent, index: number) {
         draggedIndex = index;
         if (e.dataTransfer) {
             e.dataTransfer.effectAllowed = "move";
-            const track = audioStore.queue[index];
-            const dragImage = createDragPreview(track.title);
-            e.dataTransfer.setDragImage(dragImage, 0, 0);
+            e.dataTransfer.setData("text/plain", index.toString());
         }
     }
 
@@ -61,24 +70,6 @@
         dragoverIndex = -1;
     }
 
-    function createDragPreview(title: string): HTMLElement {
-        const div = document.createElement("div");
-        div.style.position = "absolute";
-        div.style.top = "-9999px";
-        div.style.left = "-9999px";
-        div.style.background = "rgba(255, 255, 255, 0.1)";
-        div.style.border = "1px solid rgba(255, 255, 255, 0.2)";
-        div.style.borderRadius = "6px";
-        div.style.padding = "0.6rem 1rem";
-        div.style.fontSize = "0.8rem";
-        div.style.color = "rgb(200, 200, 200)";
-        div.style.whiteSpace = "nowrap";
-        div.textContent = title;
-        document.body.appendChild(div);
-        setTimeout(() => document.body.removeChild(div), 0);
-        return div;
-    }
-
     async function handleClearQueue() {
         if (confirm("Clear entire queue?")) {
             isLoading = true;
@@ -94,7 +85,7 @@
 {#if open}
     <div class="queue-view">
         <div class="queue-header">
-            <span class="queue-title">Up Next</span>
+            <span class="queue-title">Queue</span>
             <div class="header-actions">
                 {#if audioStore.queue.length > 0}
                     <button
@@ -115,49 +106,61 @@
                 <p class="empty-hint">Play an album or playlist to populate it.</p>
             </div>
         {:else}
-            <VirtualList items={queueWithIndex} let:item={row}>
-                {@const track = row.track}
-                {@const i = row.index}
-                {@const isPlaying = track.instanceId === audioStore.currentQueueId}
+            <div class="virtual-list-container" bind:this={scrollContainer}>
+                <div style="position: relative; width: 100%; height: {$virtStore.getTotalSize()}px;">
+                    {#each $virtStore.getVirtualItems() as row (row.index)}
+                        {@const i = row.index}
+                        {@const track = queueWithIndex[i].track}
+                        {@const isPlaying = track.instanceId === audioStore.currentQueueId}
+                        {@const isPast = i < audioStore.currentPosition}
 
-                <div
-                    class="queue-row"
-                    class:playing={isPlaying}
-                    class:drag-over={dragoverIndex === i}
-                    class:just-reordered={justReorderedIndex === i}
-                    role="button"
-                    tabindex="0"
-                    draggable="true"
-                    ondragstart={(e) => handleDragStart(e, i)}
-                    ondragover={(e) => handleDragOver(e, i)}
-                    ondragleave={handleDragLeave}
-                    ondrop={(e) => handleDrop(e, i)}
-                    ondragend={() => {
-                        dragoverIndex = -1;
-                        draggedIndex = -1;
-                    }}
-                    onclick={() => jumpToTrack(track.instanceId)}
-                    onkeydown={(e) => e.key === 'Enter' && jumpToTrack(track.instanceId)}
-                >
-                    <span class="row-num">
-                        {#if isPlaying}
-                            <span class="playing-indicator">
-                                {#if audioStore.playbackState === "Playing"}
-                                    <Pause size={20} weight="fill" color="#b58e62" />
+                        <div
+                            class="queue-row"
+                            class:playing={isPlaying}
+                            class:past-track={isPast && !isPlaying}
+                            class:drag-over={dragoverIndex === i}
+                            class:just-reordered={justReorderedIndex === i}
+                            role="button"
+                            tabindex="0"
+                            draggable="true"
+                            style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({row.start}px);"
+                            ondragstart={(e) => handleDragStart(e, i)}
+                            ondragover={(e) => handleDragOver(e, i)}
+                            ondragleave={handleDragLeave}
+                            ondrop={(e) => handleDrop(e, i)}
+                            ondragend={() => {
+                                dragoverIndex = -1;
+                                draggedIndex = -1;
+                            }}
+                            onclick={() => jumpToTrack(track.instanceId)}
+                            onkeydown={(e) => e.key === 'Enter' && jumpToTrack(track.instanceId)}
+                        >
+                            <span class="row-num">
+                                {#if isPlaying}
+                                    <span class="playing-indicator">
+                                        {#if audioStore.playbackState === "Playing"}
+                                            <div class="playing-visualizer">
+                                                <div class="bar"></div>
+                                                <div class="bar"></div>
+                                                <div class="bar"></div>
+                                                <div class="bar"></div>
+                                            </div>
+                                        {:else}
+                                            <Pause size={18} weight="bold" color="var(--echo-primary)" />
+                                        {/if}
+                                    </span>
                                 {:else}
-                                    <Play size={20} weight="fill" color="#b58e62" />
+                                    {i + 1}
                                 {/if}
                             </span>
-                        {:else}
-                            {i + 1}
-                        {/if}
-                    </span>
-                    <div class="row-info">
-                        <span class="row-title">{track.title}</span>
-                        <span class="row-artist">{track.artist || "Unknown"}</span>
-                    </div>
+                            <div class="row-info">
+                                <span class="row-title">{track.title}</span>
+                                <span class="row-artist">{track.artist || "Unknown"}</span>
+                            </div>
+                        </div>
+                    {/each}
                 </div>
-            </VirtualList>
+            </div>
         {/if}
     </div>
 {/if}
@@ -245,7 +248,7 @@
         line-height: 1.5;
     }
 
-    :global(.virtual-list-container) {
+    .virtual-list-container {
         flex: 1;
         overflow-y: auto;
         padding: 0.375rem 0;
@@ -267,12 +270,17 @@
     }
 
     .queue-row.drag-over {
-        border-top: 2px solid var(--echo-accent);
+        border-top: 2px solid var(--echo-primary);
         background: rgba(255 255 255 / 0.05);
     }
 
     .queue-row.playing {
         background: rgba(255 255 255 / 0.04);
+    }
+
+    .queue-row.past-track {
+        opacity: 0.45;
+        filter: grayscale(40%);
     }
 
     .queue-row[draggable="true"]:active {
@@ -302,15 +310,61 @@
     .row-num {
         font-size: 0.72rem;
         color: var(--echo-text-3);
-        width: 24px;
-        text-align: center;
-        flex-shrink: 0;
+        width: 1.5rem;
+        text-align: right;
         font-variant-numeric: tabular-nums;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
     }
 
-    .playing-indicator {
-        color: var(--echo-silver);
-        font-weight: bold;
+    .playing-visualizer {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        gap: 2px;
+        height: 14px;
+        width: 18px;
+    }
+
+    .playing-visualizer .bar {
+        width: 3px;
+        background-color: var(--echo-primary);
+        border-radius: 2px;
+        transform-origin: bottom;
+    }
+
+    .playing-visualizer .bar:nth-child(1) { height: 100%; animation: eq-bar-1 1.2s ease-in-out infinite; }
+    .playing-visualizer .bar:nth-child(2) { height: 100%; animation: eq-bar-2 1.5s ease-in-out infinite; }
+    .playing-visualizer .bar:nth-child(3) { height: 100%; animation: eq-bar-3 1.1s ease-in-out infinite; }
+    .playing-visualizer .bar:nth-child(4) { height: 100%; animation: eq-bar-4 1.4s ease-in-out infinite; }
+
+    @keyframes eq-bar-1 {
+        0%, 100% { transform: scaleY(0.3); }
+        25% { transform: scaleY(0.9); }
+        50% { transform: scaleY(0.5); }
+        75% { transform: scaleY(1.0); }
+    }
+
+    @keyframes eq-bar-2 {
+        0%, 100% { transform: scaleY(0.6); }
+        25% { transform: scaleY(0.2); }
+        50% { transform: scaleY(1.0); }
+        75% { transform: scaleY(0.4); }
+    }
+
+    @keyframes eq-bar-3 {
+        0%, 100% { transform: scaleY(0.8); }
+        25% { transform: scaleY(0.4); }
+        50% { transform: scaleY(0.9); }
+        75% { transform: scaleY(0.3); }
+    }
+
+    @keyframes eq-bar-4 {
+        0%, 100% { transform: scaleY(0.4); }
+        25% { transform: scaleY(1.0); }
+        50% { transform: scaleY(0.3); }
+        75% { transform: scaleY(0.8); }
     }
 
     .row-info {

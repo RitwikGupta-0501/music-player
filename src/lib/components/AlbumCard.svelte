@@ -4,9 +4,11 @@
 
     let { 
         album, 
+        selected = false, 
         onclick 
     } = $props<{ 
         album: Album; 
+        selected?: boolean; 
         onclick: () => void 
     }>();
 
@@ -25,8 +27,8 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="album-card group grid-item-smooth" {onclick}>
-    <div class="art-container grid-item-smooth">
+<div class="album-card group {selected ? 'selected' : ''}" {onclick}>
+    <div class="art-container">
         {#if artUrl}
             <div 
                 class="art-img" 
@@ -57,12 +59,14 @@
 </div>
 
 <style>
-    .grid-item-smooth {
-        transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-    }
 
     .album-card {
         cursor: pointer;
+    }
+
+    .album-card.selected .art-container {
+        border-color: var(--echo-primary);
+        box-shadow: 0 0 0 2px var(--echo-primary), 0 10px 15px -3px rgba(0, 0, 0, 0.5);
     }
 
     .art-container {

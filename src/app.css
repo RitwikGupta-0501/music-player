@@ -145,21 +145,23 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--echo-chrome);
+  background: var(--echo-primary);
   color: var(--echo-void);
   font-weight: 600;
 }
 button.primary:hover:not(:disabled) {
-  background: #ffffff;
+  background: var(--echo-primary-dark);
 }
 
 button.ghost {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--echo-border);
   color: var(--echo-text-2);
   padding: 0.5rem 0.75rem;
 }
 button.ghost:hover:not(:disabled) {
-  background: rgba(255 255 255 / 0.06);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--echo-border-medium);
   color: var(--echo-text-1);
 }
 
@@ -234,6 +236,14 @@ input[type="text"]:disabled {
 }
 
 /* ─── View Transition Overrides ──────────────── */
+:root {
+    view-transition-name: none;
+}
+
+.main-content {
+    view-transition-name: main-content;
+}
+
 ::view-transition-group(*),
 ::view-transition-old(*),
 ::view-transition-new(*) {

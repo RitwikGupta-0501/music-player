@@ -1,9 +1,12 @@
 use rusqlite::{Connection, params, OptionalExtension};
-use crate::queue::{QueueState, QueueTrack, RepeatMode, QueueMode, ShuffleState};
+use crate::queue::{QueueState, QueueTrack, TrackSourceInfo, RepeatMode, QueueMode, ShuffleState};
 
-/// Save queue state to database
+/// Save queue state to database.
+/// Remote tracks are persisted with track_id = -1 plus their stream metadata.
+/// This allows cross-session queue recovery for local tracks only; remote entries
+/// are stored so the sidebar can display them, but they will be pruned on hydration
+/// if the stream URL is no longer resolvable.
 pub fn save_queue_state(conn: &Connection, queue: &QueueState) -> Result<i64, String> {
-    // Insert queue state
     conn.execute(
         "INSERT INTO queue_state (current_position, repeat_mode, queue_mode, updated_at)
          VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
@@ -17,33 +20,49 @@ pub fn save_queue_state(conn: &Connection, queue: &QueueState) -> Result<i64, St
 
     let queue_state_id = conn.last_insert_rowid();
 
-    // Insert queued tracks
     for (i, track) in queue.tracks.iter().enumerate() {
-        conn.execute(
-            "INSERT INTO queued_tracks (queue_state_id, instance_id, track_id, position)
-             VALUES (?, ?, ?, ?)",
-            params![
-                queue_state_id,
-                &track.instance_id,
-                track.track_id,
-                i as i32,
-            ],
-        )
-        .map_err(|e| e.to_string())?;
+        match &track.source {
+            TrackSourceInfo::Local { track_id, .. } => {
+                conn.execute(
+                    "INSERT INTO queued_tracks
+                     (queue_state_id, instance_id, track_id, position)
+                     VALUES (?, ?, ?, ?)",
+                    params![queue_state_id, &track.instance_id, track_id, i as i32],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            TrackSourceInfo::Remote { provider_id, remote_track_id, stream_url, quality_hint, cover_art_url, duration_ms } => {
+                conn.execute(
+                    "INSERT INTO queued_tracks
+                     (queue_state_id, instance_id, track_id, position,
+                      stream_url, provider_id, remote_track_id, quality_hint, cached_title, cached_artist, cover_art_url, duration_ms)
+                     VALUES (?, ?, -1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    params![
+                        queue_state_id,
+                        &track.instance_id,
+                        i as i32,
+                        stream_url.as_deref(),
+                        provider_id,
+                        remote_track_id,
+                        quality_hint,
+                        &track.title,
+                        &track.artist,
+                        cover_art_url,
+                        duration_ms.map(|d| d as i64),
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
     }
 
-    // Insert shuffle order if present
+    // Save shuffle order if present
     if let Some(shuffle) = &queue.shuffle_state {
         for (i, instance_id) in shuffle.order.iter().enumerate() {
             conn.execute(
                 "INSERT INTO shuffle_order (queue_state_id, instance_id, position, seed)
                  VALUES (?, ?, ?, ?)",
-                params![
-                    queue_state_id,
-                    instance_id,
-                    i as i32,
-                    shuffle.seed as i32,
-                ],
+                params![queue_state_id, instance_id, i as i32, shuffle.seed as i32],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -52,7 +71,7 @@ pub fn save_queue_state(conn: &Connection, queue: &QueueState) -> Result<i64, St
     Ok(queue_state_id)
 }
 
-/// Load queue state from database (returns the most recent)
+/// Load queue state from database (returns the most recent).
 pub fn load_queue_state(conn: &Connection) -> Result<Option<QueueState>, String> {
     let queue_row = conn
         .query_row(
@@ -73,52 +92,50 @@ pub fn load_queue_state(conn: &Connection) -> Result<Option<QueueState>, String>
 
     match queue_row {
         Some((queue_state_id, current_position, repeat_mode_str, queue_mode_str)) => {
-            // Parse repeat mode
             let repeat_mode = match repeat_mode_str.as_str() {
-                "Off" => RepeatMode::Off,
                 "All" => RepeatMode::All,
                 "One" => RepeatMode::One,
                 _ => RepeatMode::Off,
             };
-
-            // Parse queue mode
             let queue_mode = match queue_mode_str.as_str() {
                 "Shuffle" => QueueMode::Shuffle,
                 _ => QueueMode::Normal,
             };
 
-            // Load tracks
             let mut stmt = conn
                 .prepare(
-                    "SELECT instance_id, track_id, position FROM queued_tracks
+                    "SELECT instance_id, track_id, stream_url, provider_id, remote_track_id, quality_hint,
+                            cached_title, cached_artist, cover_art_url, duration_ms
+                     FROM queued_tracks
                      WHERE queue_state_id = ? ORDER BY position",
                 )
                 .map_err(|e| e.to_string())?;
 
-            let tracks = stmt
+            let raw_tracks: Vec<RawTrackRow> = stmt
                 .query_map(params![queue_state_id], |row| {
-                    Ok(QueueTrack {
-                        instance_id: row.get(0)?,
-                        track_id: row.get(1)?,
-                        title: String::new(),  // Will be fetched separately
-                        artist: None,
-                        file_path: String::new(),
-                        album_id: None,
-                        track_number: None,
-                    })
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?, // remote_track_id
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<i64>>(9)?.map(|d| d as u64),
+                    ))
                 })
                 .map_err(|e| e.to_string())?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|e| e.to_string())?;
 
-            // Hydrate tracks with data from tracks table
-            let hydrated_tracks = hydrate_tracks(conn, tracks)?;
+            let tracks = hydrate_tracks(conn, raw_tracks)?;
 
-            // Load shuffle order if present
             let shuffle_state = load_shuffle_state(conn, queue_state_id)?;
 
             Ok(Some(QueueState {
-                tracks: hydrated_tracks,
+                tracks,
                 current_position,
                 repeat_mode,
                 mode: queue_mode,
@@ -127,6 +144,62 @@ pub fn load_queue_state(conn: &Connection) -> Result<Option<QueueState>, String>
         }
         None => Ok(None),
     }
+}
+
+type RawTrackRow = (String, i64, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<u64>);
+
+/// Hydrate raw DB rows into full `QueueTrack` values.
+/// Local tracks (track_id > 0) are joined with the library; remote tracks use cached metadata.
+fn hydrate_tracks(conn: &Connection, rows: Vec<RawTrackRow>) -> Result<Vec<QueueTrack>, String> {
+    let mut tracks = Vec::new();
+
+    for (instance_id, track_id, stream_url, provider_id, remote_track_id, quality_hint, cached_title, cached_artist, cover_art_url, duration_ms) in rows {
+        if track_id > 0 {
+            // Local track — hydrate from library
+            match conn.query_row(
+                "SELECT title, artist, album_id, track_number, file_path FROM tracks WHERE id = ?",
+                params![track_id],
+                |row| {
+                    Ok(QueueTrack {
+                        instance_id: instance_id.clone(),
+                        title: row.get(0)?,
+                        artist: row.get(1)?,
+                        track_number: row.get(3)?,
+                        source: TrackSourceInfo::Local {
+                            track_id,
+                            file_path: row.get(4)?,
+                            album_id: row.get(2)?,
+                        },
+                    })
+                },
+            ) {
+                Ok(t) => tracks.push(t),
+                Err(e) => log::warn!("Skipping orphaned local track {}: {}", track_id, e),
+            }
+        } else {
+            // Remote track — use cached metadata from DB row
+            // `remote_track_id` is required for modern remote tracks, but older DBs might not have it.
+            // If missing, we fallback to empty string (though ideally they'd just be orphaned).
+            if let Some(pid) = provider_id {
+                tracks.push(QueueTrack {
+                    instance_id,
+                    title: cached_title.unwrap_or_else(|| "Unknown".to_string()),
+                    artist: cached_artist,
+                    track_number: None,
+                    source: TrackSourceInfo::Remote {
+                        stream_url,
+                        provider_id: pid,
+                        remote_track_id: remote_track_id.unwrap_or_else(|| "".to_string()),
+                        quality_hint,
+                        cover_art_url,
+                        duration_ms,
+                    },
+                });
+            }
+        }
+    }
+
+    Ok(tracks)
 }
 
 /// Load shuffle state for a queue
@@ -146,23 +219,23 @@ fn load_shuffle_state(conn: &Connection, queue_state_id: i64) -> Result<Option<S
         return Ok(None);
     }
 
-    // Fetch all shuffle order entries
     let mut stmt = conn
         .prepare(
-            "SELECT instance_id, position, seed FROM shuffle_order
+            "SELECT instance_id, seed FROM shuffle_order
              WHERE queue_state_id = ? ORDER BY position",
         )
         .map_err(|e| e.to_string())?;
 
-    let order: Vec<String> = stmt
-        .query_map(params![queue_state_id], |row| row.get(0))
+    let rows: Vec<(String, i64)> = stmt
+        .query_map(params![queue_state_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
 
-    let seed = stmt
-        .query_row(params![queue_state_id], |row| row.get::<_, i32>(2))
-        .map_err(|e| e.to_string())? as u64;
+    let seed = rows.first().map(|(_, s)| *s as u64).unwrap_or(0);
+    let order = rows.into_iter().map(|(id, _)| id).collect();
 
     Ok(Some(ShuffleState {
         order,
@@ -170,35 +243,6 @@ fn load_shuffle_state(conn: &Connection, queue_state_id: i64) -> Result<Option<S
         seed,
         regenerate_on_repeat: true,
     }))
-}
-
-/// Hydrate minimal tracks with full data from tracks table
-fn hydrate_tracks(conn: &Connection, tracks: Vec<QueueTrack>) -> Result<Vec<QueueTrack>, String> {
-    let mut hydrated = Vec::new();
-
-    for track in tracks {
-        let full_track = conn
-            .query_row(
-                "SELECT title, artist, album_id, track_number, file_path FROM tracks WHERE id = ?",
-                params![track.track_id],
-                |row| {
-                    Ok(QueueTrack {
-                        instance_id: track.instance_id.clone(),
-                        track_id: track.track_id,
-                        title: row.get(0)?,
-                        artist: row.get(1)?,
-                        album_id: row.get(2)?,
-                        track_number: row.get(3)?,
-                        file_path: row.get(4)?,
-                    })
-                },
-            )
-            .map_err(|e| format!("Failed to hydrate track {}: {}", track.track_id, e))?;
-
-        hydrated.push(full_track);
-    }
-
-    Ok(hydrated)
 }
 
 /// Log queue action for analytics
@@ -255,7 +299,6 @@ pub fn cleanup_old_states(conn: &Connection) -> Result<(), String> {
 mod tests {
     #[test]
     fn test_queue_persistence_roundtrip() {
-        // This would require a test database setup
-        // Deferred to integration tests
+        // Requires a test database setup — deferred to integration tests
     }
 }
