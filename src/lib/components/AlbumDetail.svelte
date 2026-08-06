@@ -1,6 +1,7 @@
 <script lang="ts">
     import { libraryStore, type Album, type LocalTrack } from "$lib/stores/library.svelte";
     import { audioStore } from "$lib/stores/audio.svelte";
+    import { toastStore } from "$lib/stores/toast.svelte";
     import { DotsThree, Play, Plus, Waveform } from "phosphor-svelte";
 
     let { album, onBack } = $props<{ album: Album; onBack: () => void }>();
@@ -54,16 +55,38 @@
     }
 
     async function playTrack(index: number) {
-        await audioStore.setQueue(
-            tracks.map(t => ({
-                id: t.id,
-                title: t.title,
-                artist: t.artist,
-                file_path: t.file_path,
-            })),
-            index
-        );
-        await audioStore.play();
+        if (!album || tracks.length === 0) return;
+
+        if (audioStore.queue.length > 0) {
+            const trackPayload = {
+                id: tracks[index].id,
+                title: tracks[index].title,
+                artist: tracks[index].artist,
+                album: album.title,
+                file_path: tracks[index].file_path,
+                track_number: tracks[index].track_number,
+            };
+
+            if (audioStore.trackClickBehavior === "interrupt") {
+                await audioStore.playInterrupt(trackPayload);
+                return;
+            } else if (audioStore.trackClickBehavior === "append") {
+                await audioStore.addToQueue(trackPayload);
+                toastStore.info("Added to queue");
+                return;
+            }
+        }
+
+        const queueTracks = tracks.map((t) => ({
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: album.title,
+            file_path: t.file_path,
+            track_number: t.track_number,
+        }));
+        
+        await audioStore.setQueue(queueTracks, index);
     }
 </script>
 

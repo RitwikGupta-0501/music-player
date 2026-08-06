@@ -91,8 +91,8 @@ impl HlsStream {
         let client = self.client.clone();
         
         let body = self.runtime.block_on(async {
-            let res = client.get(seg_url).send().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-            res.bytes().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            let res = client.get(seg_url).send().await.map_err(|e| std::io::Error::other(e.to_string()))?;
+            res.bytes().await.map_err(|e| std::io::Error::other(e.to_string()))
         })?;
 
         self.current_segment_data = Some(std::io::Cursor::new(body));

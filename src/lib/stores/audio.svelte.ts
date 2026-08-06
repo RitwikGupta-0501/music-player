@@ -51,6 +51,8 @@ export class AudioStore {
     volume = $state(1.0);
     isMuted = $state(false);
 
+    trackClickBehavior = $state<"interrupt" | "clear" | "append">("interrupt");
+
     // ══════════════════════════════════════════
     // QUEUE STATE (Cached from backend events)
     // ══════════════════════════════════════════
@@ -144,6 +146,12 @@ export class AudioStore {
             if (persistedMute !== null) {
                 this.isMuted = persistedMute === "true";
                 await invoke("set_mute", { mute: this.isMuted });
+            }
+            const persistedClickBehavior = await invoke<string | null>("get_setting", {
+                key: "track_click_behavior",
+            });
+            if (persistedClickBehavior !== null) {
+                this.trackClickBehavior = persistedClickBehavior as "interrupt" | "clear" | "append";
             }
         } catch (e) {
             console.error("Failed to load settings:", e);
@@ -270,6 +278,15 @@ export class AudioStore {
         }
     }
 
+    async setTrackClickBehavior(behavior: "interrupt" | "clear" | "append") {
+        this.trackClickBehavior = behavior;
+        try {
+            await invoke("set_setting", { key: "track_click_behavior", value: behavior });
+        } catch (e) {
+            console.error("Failed to save track click behavior:", e);
+        }
+    }
+
     // ══════════════════════════════════════════
     // QUEUE COMMANDS (All via backend)
     // ══════════════════════════════════════════
@@ -346,6 +363,26 @@ export class AudioStore {
             }
         } catch (e) {
             console.error("Play next failed:", e);
+        }
+    }
+
+    async playInterrupt(track: any) {
+        try {
+            const trackWithId = this.formatQueueTrack(track);
+            const event = await invoke<QueueChangePayload>("add_to_queue", { track: trackWithId });
+            
+            if (event && event.tracks && event.tracks.length > 1) {
+                const fromIndex = event.tracks.length - 1;
+                const toIndex = Math.min(event.current_position + 1, event.tracks.length - 1);
+                
+                if (fromIndex !== toIndex) {
+                    await invoke("reorder_queue", { fromIndex, toIndex });
+                }
+
+                await this.jumpToTrack(trackWithId.instanceId);
+            }
+        } catch (e) {
+            console.error("Play interrupt failed:", e);
         }
     }
 

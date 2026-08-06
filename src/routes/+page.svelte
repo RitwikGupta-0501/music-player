@@ -4,7 +4,7 @@
 
     import Sidebar from "$lib/components/Sidebar.svelte";
     import PlayerBar from "$lib/components/PlayerBar.svelte";
-    import SettingsModal from "$lib/components/SettingsModal.svelte";
+    import SettingsView from "$lib/components/SettingsView.svelte";
     import QueueSidebar from "$lib/components/QueueSidebar.svelte";
     import KeyboardHandler from "$lib/components/KeyboardHandler.svelte";
     import ToastContainer from "$lib/components/ToastContainer.svelte";
@@ -85,6 +85,8 @@
             <PlaylistView bind:activeView onSelectPlaylist={(p) => { selectedPlaylist = p; queueOpen = false; }} />
         {:else if activeView === "providers"}
             <ProvidersView />
+        {:else if activeView === "settings"}
+            <SettingsView />
         {/if}
     </main>
 
@@ -111,10 +113,6 @@
 <PlayerBar bind:queueOpen bind:fullScreenOpen />
 
 <FullScreenPlayer bind:isOpen={fullScreenOpen} onToggleQueue={() => { queueOpen = !queueOpen; }} />
-
-{#if activeView === "settings"}
-    <SettingsModal onClose={() => activeView = "albums"} />
-{/if}
 
 <GlobalSearch bind:isOpen={globalSearchOpen} />
 

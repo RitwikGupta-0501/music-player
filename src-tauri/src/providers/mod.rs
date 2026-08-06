@@ -411,10 +411,8 @@ fn inject_http_table(
         .create_async_function(move |_lua, (url, headers): (String, mlua::Table)| {
             let client = client_gwh.clone();
             let mut header_map = std::collections::HashMap::new();
-            for pair in headers.pairs::<String, String>() {
-                if let Ok((k, v)) = pair {
-                    header_map.insert(k, v);
-                }
+            for (k, v) in headers.pairs::<String, String>().flatten() {
+                header_map.insert(k, v);
             }
             async move {
                 do_http_request(&client, reqwest::Method::GET, &url, Some(header_map), None).await
@@ -430,10 +428,8 @@ fn inject_http_table(
                 let client = client_post.clone();
                 let header_map = headers.map(|tbl| {
                     let mut map = std::collections::HashMap::new();
-                    for pair in tbl.pairs::<String, String>() {
-                        if let Ok((k, v)) = pair {
-                            map.insert(k, v);
-                        }
+                    for (k, v) in tbl.pairs::<String, String>().flatten() {
+                        map.insert(k, v);
                     }
                     map
                 });

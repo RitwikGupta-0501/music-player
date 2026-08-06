@@ -351,7 +351,7 @@ pub fn get_providers(conn: &Connection) -> Result<Vec<crate::ProviderInfo>, Stri
         let capabilities: Option<Vec<String>> = capabilities_str.and_then(|s| serde_json::from_str(&s).ok());
         
         providers.push(crate::ProviderInfo {
-            id: id,
+            id,
             name: row.get(1).unwrap_or_default(),
             author: row.get(2).unwrap_or_default(),
             version: row.get(3).unwrap_or_default(),

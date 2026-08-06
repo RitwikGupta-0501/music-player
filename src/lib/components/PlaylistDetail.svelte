@@ -1,6 +1,7 @@
 <script lang="ts">
     import { libraryStore, type Playlist, type LocalTrack } from "$lib/stores/library.svelte";
     import { audioStore } from "$lib/stores/audio.svelte";
+    import { toastStore } from "$lib/stores/toast.svelte";
 
     let { playlist, onBack, onDeleted } = $props<{ playlist: Playlist, onBack: () => void, onDeleted: () => void }>();
     
@@ -37,6 +38,25 @@
     }
 
     async function playTrack(index: number) {
+        if (audioStore.queue.length > 0) {
+            const t = tracks[index];
+            const trackPayload = {
+                id: t.id,
+                title: t.title,
+                artist: t.artist,
+                file_path: t.file_path,
+            };
+
+            if (audioStore.trackClickBehavior === "interrupt") {
+                await audioStore.playInterrupt(trackPayload);
+                return;
+            } else if (audioStore.trackClickBehavior === "append") {
+                await audioStore.addToQueue(trackPayload);
+                toastStore.info("Added to queue");
+                return;
+            }
+        }
+
         await audioStore.setQueue(
             tracks.map(t => ({
                 id: t.id,

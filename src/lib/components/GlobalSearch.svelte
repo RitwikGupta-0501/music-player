@@ -1,6 +1,7 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
     import { audioStore } from "$lib/stores/audio.svelte";
+    import { toastStore } from "$lib/stores/toast.svelte";
 
     let { isOpen = $bindable(false) } = $props();
 
@@ -71,21 +72,46 @@
     }
 
     function playTrack(track: any) {
-        // Local library tracks already have file_path — audioStore.setQueue detects it automatically
+        if (audioStore.queue.length > 0) {
+            if (audioStore.trackClickBehavior === "interrupt") {
+                audioStore.playInterrupt(track);
+                isOpen = false;
+                return;
+            } else if (audioStore.trackClickBehavior === "append") {
+                audioStore.addToQueue(track);
+                toastStore.info("Added to queue");
+                isOpen = false;
+                return;
+            }
+        }
         audioStore.setQueue([track], 0);
         isOpen = false;
     }
     
     function playAlternative(alt: any) {
-        // Remote tracks carry stream_url — audioStore.setQueue detects it automatically
-        audioStore.setQueue([{
+        const payload = {
             title: alt.title,
             artist: alt.artist,
             stream_url: alt.stream_url,
             provider_id: alt.provider_id ?? 'remote',
             quality_hint: alt.quality_hint ?? null,
             cover_art_url: alt.cover_art_url ?? null,
-        }], 0);
+        };
+        
+        if (audioStore.queue.length > 0) {
+            if (audioStore.trackClickBehavior === "interrupt") {
+                audioStore.playInterrupt(payload);
+                isOpen = false;
+                return;
+            } else if (audioStore.trackClickBehavior === "append") {
+                audioStore.addToQueue(payload);
+                toastStore.info("Added to queue");
+                isOpen = false;
+                return;
+            }
+        }
+        
+        audioStore.setQueue([payload], 0);
         isOpen = false;
     }
 
