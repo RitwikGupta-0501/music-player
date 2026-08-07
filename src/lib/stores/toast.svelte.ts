@@ -10,9 +10,9 @@ interface Toast {
 class ToastStore {
     toasts = $state<Toast[]>([]);
 
-    show(message: string, type: 'info' | 'success' | 'error' = 'info', duration = 4000) {
+    show(message: string, type: 'info' | 'success' | 'error' = 'info', duration = 2500) {
         const id = ++_toastId;
-        this.toasts = [...this.toasts, { id, message, type, duration }];
+        this.toasts = [{ id, message, type, duration }, ...this.toasts];
 
         setTimeout(() => {
             this.dismiss(id);

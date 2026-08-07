@@ -1,6 +1,7 @@
 <script lang="ts">
     import { audioStore } from "$lib/stores/audio.svelte";
     import { libraryStore, type Album } from "$lib/stores/library.svelte";
+    import { settingsStore } from "$lib/stores/settings.svelte";
 
     import Sidebar from "$lib/components/Sidebar.svelte";
     import PlayerBar from "$lib/components/PlayerBar.svelte";
@@ -47,6 +48,7 @@
             await audioStore.init();
             await libraryStore.fetchAlbums();
             await libraryStore.fetchPlaylists();
+            await settingsStore.init();
         })();
 
         document.documentElement.style.setProperty('--drawer-w', drawerOpen ? '400px' : '0px');

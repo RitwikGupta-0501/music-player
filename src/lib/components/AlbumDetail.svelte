@@ -72,7 +72,7 @@
                 return;
             } else if (audioStore.trackClickBehavior === "append") {
                 await audioStore.addToQueue(trackPayload);
-                toastStore.info("Added to queue");
+                toastStore.show("Added to queue", 'info', 1500);
                 return;
             }
         }
@@ -491,3 +491,4 @@
         color: white;
     }
 </style>
+

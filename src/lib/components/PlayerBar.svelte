@@ -1,5 +1,6 @@
 <script lang="ts">
     import { audioStore } from "$lib/stores/audio.svelte";
+    import { settingsStore } from "$lib/stores/settings.svelte";
     import { libraryStore } from "$lib/stores/library.svelte";
     import {
         Play,
@@ -122,7 +123,7 @@
     );
 </script>
 
-<div class="player-pill-container">
+<div class="player-pill-container" style="--pill-bg: {settingsStore.glassyPlayerBar ? 'var(--echo-glass-bg)' : 'var(--echo-surface)'};">
     <div class="player-pill-wrapper" data-state={pillState}>
         <!-- 1. Fitts's Law Top-Edge Seek Bar -->
         <div class="seek-hitbox group">
@@ -277,7 +278,6 @@
     :global(body) {
         --text-main: var(--echo-text-1);
         --muted: var(--echo-text-2);
-        --pill-bg: var(--echo-surface);
     }
 
     .text-muted {
@@ -351,6 +351,7 @@
         height: 100%;
         border-top-right-radius: 9999px;
         border-bottom-right-radius: 9999px;
+        box-shadow: 0 0 6px rgba(226, 169, 115, 0.2);
     }
     .seek-thumb {
         position: absolute;
@@ -360,7 +361,7 @@
         height: 10px;
         border-radius: 50%;
         opacity: 0;
-        box-shadow: 0 0 8px rgba(181, 142, 98, 0.6);
+        box-shadow: 0 0 6px rgba(226, 169, 115, 0.3);
         transition:
             opacity 0.2s,
             transform 0.2s;
@@ -394,7 +395,7 @@
         justify-content: center;
         position: relative;
         z-index: 10;
-        backdrop-filter: blur(12px);
+        backdrop-filter: blur(6px);
     }
 
     /* Flanks */
@@ -524,7 +525,7 @@
         justify-content: center;
         transition: all 0.3s;
         margin: 0 4px;
-        color: var(--pill-bg);
+        color: var(--echo-void);
         border: none;
         cursor: pointer;
     }
@@ -599,7 +600,7 @@
         height: 8px;
         border-radius: 50%;
         opacity: 0;
-        box-shadow: 0 0 6px rgba(181, 142, 98, 0.5);
+        box-shadow: 0 0 6px rgba(226, 169, 115, 0.5);
         transition:
             opacity 0.2s,
             transform 0.2s;
@@ -632,10 +633,10 @@
 
     /* Playing State */
     .player-pill-wrapper[data-state="playing"] .pill-accent-bg {
-        background-color: #b58e62;
+        background-color: var(--echo-primary);
     }
     .player-pill-wrapper[data-state="playing"] .pill-accent-shadow {
-        box-shadow: 0 0 15px rgba(181, 142, 98, 0.3);
+        box-shadow: 0 0 15px rgba(226, 169, 115, 0.3);
     }
     .player-pill-wrapper[data-state="playing"] .song-title {
         color: var(--text-main);
@@ -646,10 +647,10 @@
 
     /* Paused State */
     .player-pill-wrapper[data-state="paused"] .pill-accent-bg {
-        background-color: #8c7355;
+        background-color: var(--echo-primary-dark);
     }
     .player-pill-wrapper[data-state="paused"] .pill-accent-shadow {
-        box-shadow: 0 0 10px rgba(140, 115, 85, 0.1);
+        box-shadow: 0 0 10px rgba(181, 142, 98, 0.15);
     }
     .player-pill-wrapper[data-state="paused"] .song-title {
         color: var(--muted);

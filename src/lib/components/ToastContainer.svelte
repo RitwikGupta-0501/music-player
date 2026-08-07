@@ -1,12 +1,14 @@
 <script lang="ts">
     import { toastStore } from "$lib/stores/toast.svelte";
     import { X } from "phosphor-svelte";
+    import { fly } from "svelte/transition";
+    import { flip } from "svelte/animate";
 </script>
 
 {#if toastStore.toasts.length > 0}
     <div class="toast-container">
         {#each toastStore.toasts as toast (toast.id)}
-            <div class="toast toast-{toast.type}" role="alert">
+            <div class="toast toast-{toast.type}" role="alert" animate:flip={{ duration: 300 }} transition:fly={{ x: 50, duration: 300 }}>
                 <span class="toast-message">{toast.message}</span>
                 <button class="toast-dismiss" onclick={() => toastStore.dismiss(toast.id)} aria-label="Dismiss">
                     <X size={16} weight="bold" />
@@ -34,27 +36,24 @@
         align-items: center;
         gap: 0.75rem;
         padding: 0.75rem 1rem;
-        border-radius: 8px;
-        font-family: var(--font-body);
+        border-radius: 10px;
+        font-family: var(--echo-font-body);
         font-size: 0.9rem;
-        color: var(--color-chalk);
-        background: rgba(31, 40, 51, 0.9);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid var(--glass-border);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-        animation: toast-slide-in 0.3s ease-out;
+        color: var(--echo-text-1);
+        background: var(--echo-surface);
+        border: 1px solid var(--echo-border);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         max-width: 380px;
     }
 
     .toast-info {
-        border-left: 3px solid var(--color-cyan);
+        border-left: 3px solid var(--echo-primary);
     }
     .toast-success {
-        border-left: 3px solid var(--color-teal);
+        border-left: 3px solid #10b981;
     }
     .toast-error {
-        border-left: 3px solid var(--color-danger);
+        border-left: 3px solid #ef4444;
     }
 
     .toast-message {
@@ -64,7 +63,7 @@
     .toast-dismiss {
         background: transparent;
         border: none;
-        color: var(--color-chalk-muted);
+        color: var(--echo-text-2);
         padding: 0.25rem;
         cursor: pointer;
         display: flex;
@@ -78,14 +77,4 @@
         transform: none;
     }
 
-    @keyframes toast-slide-in {
-        from {
-            opacity: 0;
-            transform: translateX(1rem);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
-    }
 </style>

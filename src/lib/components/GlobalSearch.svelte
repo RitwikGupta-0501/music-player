@@ -79,7 +79,7 @@
                 return;
             } else if (audioStore.trackClickBehavior === "append") {
                 audioStore.addToQueue(track);
-                toastStore.info("Added to queue");
+                toastStore.show("Added to queue", 'info', 1500);
                 isOpen = false;
                 return;
             }
@@ -105,7 +105,7 @@
                 return;
             } else if (audioStore.trackClickBehavior === "append") {
                 audioStore.addToQueue(payload);
-                toastStore.info("Added to queue");
+                toastStore.show("Added to queue", 'info', 1500);
                 isOpen = false;
                 return;
             }

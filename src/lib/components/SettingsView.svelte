@@ -1,10 +1,11 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
     import { libraryStore } from "$lib/stores/library.svelte";
+    import { settingsStore } from "$lib/stores/settings.svelte";
     import { CaretDown, Check } from "phosphor-svelte";
     import { onMount } from 'svelte';
 
-    let activeTab = $state<"playback" | "data">("playback");
+    let activeTab = $state<"playback" | "appearance" | "data">("playback");
     
     let keepPlayingOnClear = $state(false);
     let trackClickBehavior = $state<"interrupt" | "clear" | "append">("interrupt");
@@ -91,6 +92,13 @@
             </button>
             <button 
                 class="nav-item" 
+                class:active={activeTab === "appearance"} 
+                onclick={() => activeTab = "appearance"}
+            >
+                Appearance
+            </button>
+            <button 
+                class="nav-item" 
                 class:active={activeTab === "data"} 
                 onclick={() => activeTab = "data"}
             >
@@ -150,6 +158,21 @@
                                 </div>
                             {/if}
                         </div>
+                    </div>
+                </section>
+            {:else if activeTab === "appearance"}
+                <section class="settings-section">
+                    <h3 class="section-title">Appearance</h3>
+                    
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <p class="setting-label">Glassy Player Bar</p>
+                            <p class="setting-desc">Enable a sleek, semi-transparent frosted glass effect for the bottom player.</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" checked={settingsStore.glassyPlayerBar} onchange={(e) => settingsStore.setGlassyPlayerBar(e.currentTarget.checked)} disabled={!loaded} />
+                            <span class="slider round"></span>
+                        </label>
                     </div>
                 </section>
             {:else if activeTab === "data"}
