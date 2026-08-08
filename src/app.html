@@ -14,6 +14,10 @@
         document.getElementById('debug-overlay').style.display = 'block';
       }
       window.addEventListener('error', e => {
+        if (e.message.includes('ResizeObserver loop')) {
+            e.preventDefault();
+            return;
+        }
         showDebug();
         document.getElementById('debug-overlay').innerHTML += 'ERR: ' + e.message + '<br>';
       });

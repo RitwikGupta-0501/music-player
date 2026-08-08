@@ -2,6 +2,7 @@
     import { libraryStore, type Playlist, type LocalTrack } from "$lib/stores/library.svelte";
     import { audioStore } from "$lib/stores/audio.svelte";
     import { toastStore } from "$lib/stores/toast.svelte";
+    import { createVirtualizer } from "@tanstack/svelte-virtual";
 
     let { playlist, onBack, onDeleted } = $props<{ playlist: Playlist, onBack: () => void, onDeleted: () => void }>();
     
@@ -10,6 +11,17 @@
     let isEditingName = $state(false);
     let editName = $state("");
     let draggedIndex = $state<number | null>(null);
+
+    let scrollContainer = $state<HTMLElement | null>(null);
+    let virtStore = $derived.by(() => {
+        const container = scrollContainer;
+        return createVirtualizer({
+            count: tracks.length,
+            getScrollElement: () => container,
+            estimateSize: () => 64,
+            overscan: 10,
+        });
+    });
 
     async function loadData() {
         tracks = await libraryStore.getPlaylistTracks(playlist.id);
@@ -124,9 +136,10 @@
     }
 </script>
 
-<button class="ghost" style="margin-bottom: 2rem; padding: 0.5rem 0;" onclick={onBack}>
-    ← Back to Playlists
-</button>
+<div class="view-playlist">
+    <button class="ghost" style="margin-bottom: 2rem; padding: 0.5rem 0;" onclick={onBack}>
+        ← Back to Playlists
+    </button>
 
 <div class="album-header">
     <div class="art glass-panel" style="padding: 0;">
@@ -163,22 +176,25 @@
     </div>
 </div>
 
-<div class="track-list" style="margin-top: 3rem;">
-    {#if tracks.length === 0}
-        <p class="text-muted" style="text-align: center; margin-top: 2rem;">This playlist is empty.</p>
-    {/if}
-    {#each tracks as track, i}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_interactive_supports_focus -->
-        <div class="track-card" 
-             class:now-playing={audioStore.currentTrack === track.file_path}
-             draggable="true" 
-             ondragstart={(e) => handleDragStart(e, i)}
-             ondragover={handleDragOver}
-             ondrop={(e) => handleDrop(e, i)}
-             onclick={() => playTrack(i)}
-             style={draggedIndex === i ? "opacity: 0.5;" : ""}
-             role="button">
+<div class="track-list" bind:this={scrollContainer}>
+    <div style="position: relative; width: 100%; height: {$virtStore.getTotalSize()}px;">
+        {#if tracks.length === 0}
+            <p class="text-muted" style="text-align: center; margin-top: 2rem;">This playlist is empty.</p>
+        {/if}
+        {#each $virtStore.getVirtualItems() as row (row.index)}
+            {@const i = row.index}
+            {@const track = tracks[i]}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_interactive_supports_focus -->
+            <div class="track-card" 
+                 class:now-playing={audioStore.currentTrack === track.file_path}
+                 draggable="true" 
+                 ondragstart={(e) => handleDragStart(e, i)}
+                 ondragover={handleDragOver}
+                 ondrop={(e) => handleDrop(e, i)}
+                 onclick={() => playTrack(i)}
+                 style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({row.start}px); {draggedIndex === i ? 'opacity: 0.5;' : ''}"
+                 role="button">
             <div style="display: flex; gap: 1rem; align-items: center; flex: 1;">
                 <span class="text-muted" style="cursor: grab;" title="Drag to reorder">⠿</span>
                 <span class="text-muted" style="width: 20px; text-align: right;">{i + 1}</span>
@@ -189,10 +205,26 @@
             </div>
             <button class="ghost text-danger" style="padding: 0.2rem 0.5rem; border: none; font-size: 1.2rem;" onclick={(e) => removeTrack(e, track.id)} title="Remove from playlist">✕</button>
         </div>
-    {/each}
+        {/each}
+    </div>
+</div>
 </div>
 
 <style>
+    .view-playlist {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        inset: 0;
+        padding: 1.5rem;
+        padding-bottom: 8rem;
+    }
+    .track-list {
+        flex: 1;
+        overflow-y: auto;
+        padding-right: 0.5rem;
+        margin-top: 3rem;
+    }
     .album-header {
         display: flex;
         gap: 2rem;

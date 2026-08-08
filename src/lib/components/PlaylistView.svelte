@@ -3,6 +3,8 @@
     import { flip } from "svelte/animate";
     import { cubicOut } from "svelte/easing";
     import { Plus, ListPlus } from "phosphor-svelte";
+    import { createVirtualizer } from "@tanstack/svelte-virtual";
+    import { onMount } from "svelte";
     import LibraryHeader from "./LibraryHeader.svelte";
     import PromptModal from "./PromptModal.svelte";
 
@@ -10,6 +12,39 @@
 
     let mosaics = $state<Record<number, string[]>>({});
     let promptOpen = $state(false);
+
+    let containerWidth = $state(0);
+    let cols = $derived(Math.max(1, Math.floor((containerWidth + 32) / 222))); // 190px + 32px gap
+
+    let rows = $derived.by(() => {
+        const result = [];
+        const playlists = libraryStore.playlists;
+        for (let i = 0; i < playlists.length; i += cols) {
+            result.push(playlists.slice(i, i + cols));
+        }
+        return result;
+    });
+
+    let mainContent = $state<HTMLElement | null>(null);
+    onMount(() => {
+        mainContent = document.querySelector('.main-content');
+    });
+
+    let virtStore = $derived.by(() => {
+        const mc = mainContent;
+        const rowCount = rows.length;
+        const cw = containerWidth;
+        const cCount = cols;
+        const colWidth = cCount > 0 ? (cw - (cCount - 1) * 32) / cCount : 0;
+        const rowHeight = colWidth > 0 ? colWidth + 52 + 32 : 320; // card + text + gap
+
+        return createVirtualizer({
+            count: rowCount,
+            getScrollElement: () => mc,
+            estimateSize: () => rowHeight,
+            overscan: 5,
+        });
+    });
 
     async function handleCreate(name: string) {
         if (!name || !name.trim()) return;
@@ -65,30 +100,38 @@
     </div>
 {:else}
     <div class="playlist-grid">
-        {#each libraryStore.playlists as playlist (playlist.id)}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div 
-                class="playlist-card glass-panel" 
-                onclick={() => onSelectPlaylist(playlist)}
-            >
-                <div class="art">
-                    {#if mosaics[playlist.id] && mosaics[playlist.id].length >= 4}
-                        <div class="mosaic">
-                            <img src={mosaics[playlist.id][0]} alt="Cover" />
-                            <img src={mosaics[playlist.id][1]} alt="Cover" />
-                            <img src={mosaics[playlist.id][2]} alt="Cover" />
-                            <img src={mosaics[playlist.id][3]} alt="Cover" />
+        <div bind:clientWidth={containerWidth} style="position: relative; width: 100%; height: {$virtStore.getTotalSize()}px;">
+            {#each $virtStore.getVirtualItems() as virtualRow (virtualRow.index)}
+                {@const r = virtualRow.index}
+                {@const rowPlaylists = rows[r]}
+                <div class="virtual-row" style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({virtualRow.start}px); grid-template-columns: repeat({cols}, minmax(0, 1fr));">
+                    {#each rowPlaylists as playlist (playlist.id)}
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <div 
+                            class="playlist-card glass-panel" 
+                            onclick={() => onSelectPlaylist(playlist)}
+                        >
+                            <div class="art">
+                                {#if mosaics[playlist.id] && mosaics[playlist.id].length >= 4}
+                                    <div class="mosaic">
+                                        <img src={mosaics[playlist.id][0]} alt="Cover" />
+                                        <img src={mosaics[playlist.id][1]} alt="Cover" />
+                                        <img src={mosaics[playlist.id][2]} alt="Cover" />
+                                        <img src={mosaics[playlist.id][3]} alt="Cover" />
+                                    </div>
+                                {:else if mosaics[playlist.id] && mosaics[playlist.id].length > 0}
+                                    <img src={mosaics[playlist.id][0]} alt="Cover" style="width: 100%; height: 100%; object-fit: cover;" />
+                                {:else}
+                                    <div class="icon">📝</div>
+                                {/if}
+                            </div>
+                            <h3 style="margin-top: 0.5rem; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{playlist.name}</h3>
                         </div>
-                    {:else if mosaics[playlist.id] && mosaics[playlist.id].length > 0}
-                        <img src={mosaics[playlist.id][0]} alt="Cover" style="width: 100%; height: 100%; object-fit: cover;" />
-                    {:else}
-                        <div class="icon">📝</div>
-                    {/if}
+                    {/each}
                 </div>
-                <h3 style="margin-top: 0.5rem; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{playlist.name}</h3>
-            </div>
-        {/each}
+            {/each}
+        </div>
     </div>
 {/if}
 
@@ -103,11 +146,12 @@
 
 <style>
     .playlist-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-        gap: 2rem;
         padding: 2.5rem;
         padding-bottom: 10rem;
+    }
+    .virtual-row {
+        display: grid;
+        gap: 2rem;
     }
     .playlist-card {
         display: flex;

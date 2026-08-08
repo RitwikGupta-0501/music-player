@@ -1,42 +1,33 @@
 <script lang="ts">
     import { fade } from "svelte/transition";
     import { X } from "phosphor-svelte";
-    
-    let { 
-        title, 
-        isOpen,
-        onClose,
-        children
-    } = $props<{ 
+
+    let { title, isOpen, onClose, children } = $props<{
         title: string;
         isOpen: boolean;
         onClose: () => void;
-        children?: import('svelte').Snippet;
+        children?: import("svelte").Snippet;
     }>();
 </script>
 
-    <aside class="right-drawer" class:is-open={isOpen}>
-        <div class="drawer-content">
-            <div class="drawer-header">
-                <h2 class="drawer-title">{title}</h2>
-                <button 
-                    class="close-btn"
-                    onclick={onClose}
-                    aria-label="Close"
-                >
-                    <X size={20} weight="bold" />
-                </button>
-            </div>
-            
-            <div class="drawer-body">
-                {#key title}
-                    <div transition:fade={{ duration: 150 }} style="height: 100%;">
-                        {@render children?.()}
-                    </div>
-                {/key}
-            </div>
+<aside class="right-drawer" class:is-open={isOpen}>
+    <div class="drawer-content">
+        <div class="drawer-header">
+            <h2 class="drawer-title">{title}</h2>
+            <button class="close-btn" onclick={onClose} aria-label="Close">
+                <X size={20} weight="bold" />
+            </button>
         </div>
-    </aside>
+
+        <div class="drawer-body">
+            {#key title}
+                <div transition:fade={{ duration: 150 }} style="height: 100%;">
+                    {@render children?.()}
+                </div>
+            {/key}
+        </div>
+    </div>
+</aside>
 
 <style>
     .right-drawer {
@@ -55,7 +46,7 @@
     }
 
     .drawer-content {
-        width: 400px; /* Force internal width so it doesn't squish during transition */
+        width: 400px; 
         height: 100%;
         display: flex;
         flex-direction: column;
@@ -108,7 +99,7 @@
         scrollbar-width: none;
         -ms-overflow-style: none;
     }
-    
+
     .drawer-body::-webkit-scrollbar {
         display: none;
     }

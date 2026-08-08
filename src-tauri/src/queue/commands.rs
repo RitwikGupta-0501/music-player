@@ -1,7 +1,7 @@
-use tauri::{State, AppHandle, Emitter};
-use serde::{Serialize, Deserialize};
-use crate::queue::{QueueState, QueueTrack, RepeatMode, QueueMode};
-use crate::{telemetry, feature_flags};
+use crate::queue::{QueueMode, QueueState, QueueTrack, RepeatMode};
+use crate::{feature_flags, telemetry};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, State};
 
 /// Event payload sent to frontend when queue changes
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,7 +54,11 @@ pub async fn set_queue(
         telemetry::record_error("set_queue", e);
     })?;
 
-    log::info!("Queue set with {} tracks, starting at index {}", track_count, start_index);
+    log::info!(
+        "Queue set with {} tracks, starting at index {}",
+        track_count,
+        start_index
+    );
 
     let event = queue_to_event(&queue);
     let _ = app_handle.emit("queue-changed", &event);
@@ -89,7 +93,7 @@ pub async fn clear_queue(
         key: "keep_playing_on_queue_clear".to_string(),
         resp: tx,
     });
-    
+
     let keep_playing = match rx.await {
         Ok(Ok(Some(val))) => val == "true",
         _ => false,

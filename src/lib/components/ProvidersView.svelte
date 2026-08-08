@@ -1,6 +1,7 @@
 <script lang="ts">
     import { invoke } from '@tauri-apps/api/core';
-    import { onMount } from 'svelte';
+    import { createVirtualizer } from "@tanstack/svelte-virtual";
+    import { onMount, tick } from 'svelte';
     import { PlayCircle, PuzzlePiece, MagnifyingGlass, SpinnerGap, ArrowRight, CheckCircle, XCircle, ArrowsClockwise, SlidersHorizontal, FolderOpen, ShieldCheck, Copy, AppleLogo, SoundcloudLogo, SpotifyLogo, MapPin } from 'phosphor-svelte';
 
     interface ProviderInfo {
@@ -69,6 +70,17 @@
     // UI states for new buttons
     let isVerifyingChecksum = $state(false);
     let checksumVerified = $state(false);
+
+    let scrollContainer = $state<HTMLElement | null>(null);
+    let virtStore = $derived.by(() => {
+        const container = scrollContainer;
+        return createVirtualizer({
+            count: providers.length,
+            getScrollElement: () => container,
+            estimateSize: () => 76,
+            overscan: 5,
+        });
+    });
 
     // Dynamic icon resolution
     function getProviderIcon(iconName: string | null) {
@@ -260,7 +272,7 @@
                 </button>
             </div>
 
-            <div class="cards-container">
+            <div class="cards-container" bind:this={scrollContainer}>
                 {#if providers.length === 0 && !isScanning}
                     <div class="empty-state">
                         <PuzzlePiece size={32} class="text-3" />
@@ -268,11 +280,14 @@
                     </div>
                 {/if}
 
-                {#each providers as provider}
+                <div style="position: relative; width: 100%; height: {$virtStore.getTotalSize()}px;">
+                {#each $virtStore.getVirtualItems() as virtualRow (virtualRow.index)}
+                    {@const provider = providers[virtualRow.index]}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div 
                         class="provider-card {activeProviderPath === provider.file_path ? 'active' : ''} {provider.status !== 'enabled' ? 'disabled' : ''}"
+                        style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({virtualRow.start}px);"
                         onclick={() => setActiveProvider(provider.file_path)}
                     >
                         <div class="card-icon">
@@ -285,7 +300,7 @@
                         
                         <button 
                             class="power-btn"
-                            style="flex-shrink: 0; color: {provider.status === 'enabled' ? 'var(--echo-primary)' : 'var(--echo-text-3)'}; opacity: {provider.status === 'enabled' ? '1' : '0.5'}"
+                            style="flex-shrink: 0; color: {provider.status === 'enabled' ? 'var(--echo-primary)' : 'var(--echo-text-3)'}; opacity: {provider.status === 'enabled' ? '1' : '0.5'}; cursor: pointer;"
                             onclick={(e) => { e.stopPropagation(); toggleProvider(provider); }}
                             aria-label="Toggle provider"
                         >
@@ -297,6 +312,7 @@
                         </button>
                     </div>
                 {/each}
+                </div>
             </div>
         </div>
 

@@ -3,6 +3,7 @@
     import { audioStore } from "$lib/stores/audio.svelte";
     import { toastStore } from "$lib/stores/toast.svelte";
     import { DotsThree, Play, Plus, Waveform } from "phosphor-svelte";
+    import { createVirtualizer } from "@tanstack/svelte-virtual";
 
     let { album, onBack } = $props<{ album: Album; onBack: () => void }>();
 
@@ -12,6 +13,17 @@
     let activeDropdown = $state<number | null>(null);
     let isCreatingPlaylistForTrack = $state<number | null>(null);
     let newPlaylistName = $state("");
+
+    let scrollContainer = $state<HTMLElement | null>(null);
+    let virtStore = $derived.by(() => {
+        const container = scrollContainer;
+        return createVirtualizer({
+            count: tracks.length,
+            getScrollElement: () => container,
+            estimateSize: () => 52,
+            overscan: 10,
+        });
+    });
 
     $effect(() => {
         libraryStore.getAlbumTracks(album.id).then(t => {
@@ -103,15 +115,19 @@
         </div>
     </div>
 
-    <div class="track-list">
-        {#each tracks as track, i}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div 
-                class="track-row" 
-                class:active={audioStore.currentTrack === track.title || audioStore.currentTrack === track.file_path}
-                onclick={() => playTrack(i)}
-            >
+    <div class="track-list" bind:this={scrollContainer}>
+        <div style="position: relative; width: 100%; height: {$virtStore.getTotalSize()}px;">
+            {#each $virtStore.getVirtualItems() as row (row.index)}
+                {@const i = row.index}
+                {@const track = tracks[i]}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div 
+                    class="track-row" 
+                    class:active={audioStore.currentTrack === track.title || audioStore.currentTrack === track.file_path}
+                    style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({row.start}px);"
+                    onclick={() => playTrack(i)}
+                >
                 <div class="track-left">
                     <div class="track-status">
                         {#if audioStore.currentTrack === track.title || audioStore.currentTrack === track.file_path}
@@ -151,6 +167,7 @@
                                 onclick={(e) => {
                                     e.stopPropagation();
                                     audioStore.playNext(track);
+                                    toastStore.show("Added to play next", 'info', 1500);
                                     activeDropdown = null;
                                 }}
                             >
@@ -161,6 +178,7 @@
                                 onclick={(e) => {
                                     e.stopPropagation();
                                     audioStore.addToQueue(track);
+                                    toastStore.show("Added to queue", 'info', 1500);
                                     activeDropdown = null;
                                 }}
                             >
@@ -173,7 +191,10 @@
                                 {#each libraryStore.playlists as playlist}
                                     <button
                                         class="dropdown-row"
-                                        onclick={(e) => addTrackToPlaylist(e, playlist.id, track.id)}
+                                        onclick={(e) => {
+                                            addTrackToPlaylist(e, playlist.id, track.id);
+                                            toastStore.show(`Added to ${playlist.name}`, 'success', 1500);
+                                        }}
                                     >
                                         {playlist.name}
                                     </button>
@@ -210,6 +231,7 @@
                 </div>
             </div>
         {/each}
+        </div>
     </div>
 </div>
 
@@ -272,6 +294,8 @@
         flex: 1;
         display: flex;
         flex-direction: column;
+        overflow-y: auto;
+        padding-right: 0.5rem;
     }
 
     .track-row {

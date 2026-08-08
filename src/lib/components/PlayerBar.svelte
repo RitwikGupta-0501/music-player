@@ -17,20 +17,23 @@
     } from "phosphor-svelte";
     import { transitionLayout } from "$lib/utils/transitions";
 
-    let { 
-        queueOpen = $bindable(false),
-        fullScreenOpen = $bindable(false)
-    } = $props<{ 
-        queueOpen?: boolean;
-        fullScreenOpen?: boolean;
-    }>();
+    let { queueOpen = $bindable(false), fullScreenOpen = $bindable(false) } =
+        $props<{
+            queueOpen?: boolean;
+            fullScreenOpen?: boolean;
+        }>();
 
     /* ── Album art for now-playing track ── */
     let playerArtUrl = $state<string | null>(null);
 
     $effect(() => {
         const track = audioStore.currentQueueTrack;
-        if (track && track.source.type === 'Local' && track.source.track_id && track.source.file_path) {
+        if (
+            track &&
+            track.source.type === "Local" &&
+            track.source.track_id &&
+            track.source.file_path
+        ) {
             libraryStore
                 .getArtworkUrl(track.source.track_id, track.source.file_path)
                 .then((url) => {
@@ -39,7 +42,11 @@
                 .catch(() => {
                     playerArtUrl = null;
                 });
-        } else if (track && track.source.type === 'Remote' && track.source.cover_art_url) {
+        } else if (
+            track &&
+            track.source.type === "Remote" &&
+            track.source.cover_art_url
+        ) {
             playerArtUrl = track.source.cover_art_url;
         } else {
             playerArtUrl = null;
@@ -123,7 +130,12 @@
     );
 </script>
 
-<div class="player-pill-container" style="--pill-bg: {settingsStore.glassyPlayerBar ? 'var(--echo-glass-bg)' : 'var(--echo-surface)'};">
+<div
+    class="player-pill-container"
+    style="--pill-bg: {settingsStore.glassyPlayerBar
+        ? 'rgba(25, 25, 32, 0.35)'
+        : 'var(--echo-surface)'};"
+>
     <div class="player-pill-wrapper" data-state={pillState}>
         <!-- 1. Fitts's Law Top-Edge Seek Bar -->
         <div class="seek-hitbox group">
@@ -152,14 +164,17 @@
         </div>
 
         <!-- 2. Main Pill Body -->
-        <div class="pill-body">
+        <div class="pill-body" class:is-glass={settingsStore.glassyPlayerBar}>
             <!-- Left Flank: Album Art & Song Details -->
             <div class="flank flank-left">
                 <div class="album-art-container">
                     {#if playerArtUrl}
                         <img src={playerArtUrl} alt="Now playing artwork" />
                     {:else}
-                        <div class="placeholder" style="background-color: #27272a;"></div>
+                        <div
+                            class="placeholder"
+                            style="background-color: #27272a;"
+                        ></div>
                     {/if}
                 </div>
 
@@ -291,7 +306,7 @@
         position: fixed;
         bottom: 2rem;
         left: var(--sidebar-w, 80px);
-        right: var(--drawer-w, 0px);
+        right: 0px;
         height: 72px;
         z-index: 100;
         display: flex;
@@ -337,7 +352,7 @@
         left: 0;
         width: 100%;
         height: 2px;
-        background-color: rgba(255, 255, 255, 0.1);
+        background-color: var(--pill-bg);
         border-top-left-radius: 9999px;
         border-top-right-radius: 9999px;
         transform: translateY(-50%);
@@ -396,6 +411,33 @@
         position: relative;
         z-index: 10;
         backdrop-filter: blur(6px);
+        transition: all 0.3s;
+    }
+    .pill-body.is-glass {
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        box-shadow:
+            0 20px 40px rgba(0, 0, 0, 0.6),
+            inset 0 1px 1.5px rgba(255, 255, 255, 0.22),
+            inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
+    }
+    .pill-body.is-glass::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        backdrop-filter: blur(26px) saturate(1.6) brightness(1.12);
+        mask-image: radial-gradient(
+            ellipse at center,
+            transparent 60%,
+            black 100%
+        );
+        -webkit-mask-image: radial-gradient(
+            ellipse at center,
+            transparent 60%,
+            black 100%
+        );
+        z-index: -1;
     }
 
     /* Flanks */
@@ -459,7 +501,8 @@
         display: block;
         line-height: 1.25;
         letter-spacing: 0.025em;
-        color: var(--muted);
+        color: var(--text-main);
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
     }
     .song-time {
         display: flex;
@@ -469,6 +512,7 @@
         color: var(--muted);
         font-weight: 500;
         margin-top: 2px;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
     }
 
     /* Center Controls */
@@ -495,6 +539,7 @@
         border: none;
         cursor: pointer;
         position: relative;
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
     }
     .ctrl-btn:hover {
         color: var(--text-main);
@@ -504,7 +549,7 @@
         color: var(--text-main);
     }
     .ctrl-btn.active::after {
-        content: '';
+        content: "";
         position: absolute;
         bottom: 3px;
         left: 50%;
@@ -565,6 +610,7 @@
         justify-content: center;
         cursor: pointer;
         transition: color 0.15s ease;
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
     }
     .vol-wrapper:hover .vol-icon {
         color: var(--text-main);

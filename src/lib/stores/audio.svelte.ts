@@ -352,11 +352,11 @@ export class AudioStore {
         try {
             const trackWithId = this.formatQueueTrack(track);
             const event = await invoke<QueueChangePayload>("add_to_queue", { track: trackWithId });
-            
+
             if (event && event.tracks && event.tracks.length > 1) {
                 const fromIndex = event.tracks.length - 1;
                 const toIndex = Math.min(event.current_position + 1, event.tracks.length - 1);
-                
+
                 if (fromIndex !== toIndex) {
                     await invoke("reorder_queue", { fromIndex, toIndex });
                 }
@@ -370,11 +370,11 @@ export class AudioStore {
         try {
             const trackWithId = this.formatQueueTrack(track);
             const event = await invoke<QueueChangePayload>("add_to_queue", { track: trackWithId });
-            
+
             if (event && event.tracks && event.tracks.length > 1) {
                 const fromIndex = event.tracks.length - 1;
                 const toIndex = Math.min(event.current_position + 1, event.tracks.length - 1);
-                
+
                 if (fromIndex !== toIndex) {
                     await invoke("reorder_queue", { fromIndex, toIndex });
                 }

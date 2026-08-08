@@ -200,7 +200,6 @@
         display: flex;
         height: 100vh;
         width: 100%;
-        background: var(--echo-base);
     }
 
     /* Left Pane */
